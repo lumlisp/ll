@@ -10,10 +10,12 @@ first-class closures, vectors, macros, and a comprehensive standard library.
 ```sh
 go build -o ll .
 ./ll                   # REPL
-./ll file.ll           # run file
+./ll file.ll [args...] # run file with arguments
 ./ll --help            # usage info
 ./ll --version         # version info
 ```
+
+Script arguments are accessible via `*args*` variable (list of strings).
 
 ## Syntax
 
@@ -132,7 +134,7 @@ Iterates `var` from `start` to `end` (exclusive), incrementing by 1 each step.
 (require "file.ll")   ; loads once (tracks loaded files)
 (include "file.ll")   ; loads every time
 ```
-Paths are relative to the current file's directory.
+Paths are relative to the current file's directory. Also supports directory modules: `(require "mymod")` resolves to `mymod/main.ll` if the path is a directory.
 
 ### `define-macro`
 ```
@@ -140,6 +142,39 @@ Paths are relative to the current file's directory.
 (define-macro (unless cond body) (list (quote if) (list (quote not) cond) body))
 ```
 Macros receive unevaluated argument expressions and return an expression to evaluate.
+
+## Built-in Variables
+
+| Variable | Value |
+|----------|-------|
+| `*args*` | List of command-line arguments passed to the script (empty in REPL) |
+
+## Built-in Functions
+
+| Function | Description |
+|----------|-------------|
+| `(get-file-dir)` | Returns the absolute directory of the currently executing file (like PHP's `__DIR__`), or `""` in REPL |
+
+## Module System
+
+Modules are loaded via the `import` macro, which resolves module names at compile time against `*module-paths*`.
+
+```
+(add-module-path "/path/to/modules")   ; add search path
+(remove-module-path "/path/to/modules") ; remove search path
+(import "lib")                          ; load <path>/lib.ll from first match
+(import "curl")                         ; or load <path>/curl/main.ll if directory
+```
+
+The default search paths are:
+
+- `/etc/ll/modules`
+- `ll_modules` (relative to current directory)
+
+Module resolution order for each path:
+
+1. `<path>/<name>.ll` — plain file
+2. `<path>/<name>/main.ll` — directory module (like Node.js `index.js`)
 
 ## Standard Library
 

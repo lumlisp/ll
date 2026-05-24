@@ -168,21 +168,53 @@ func (b *bundler) walkForRequires(v Value, baseDir string) error {
 }
 
 func resolveRequirePath(path, baseDir string) string {
+	// helper: if path is a directory, look for main.ll inside
+	resolveDir := func(p string) string {
+		fi, err := os.Stat(p)
+		if err != nil {
+			return ""
+		}
+		if fi.IsDir() {
+			main := filepath.Join(p, "main.ll")
+			if _, err := os.Stat(main); err == nil {
+				abs, _ := filepath.Abs(main)
+				return abs
+			}
+			return ""
+		}
+		abs, _ := filepath.Abs(p)
+		return abs
+	}
+
 	if filepath.IsAbs(path) {
-		if _, err := os.Stat(path); err == nil {
-			return path
+		if r := resolveDir(path); r != "" {
+			return r
 		}
 		return ""
 	}
 
+	// Try baseDir/path (file or directory)
 	candidate := filepath.Join(baseDir, path)
-	if _, err := os.Stat(candidate); err == nil {
-		abs, _ := filepath.Abs(candidate)
+	if r := resolveDir(candidate); r != "" {
+		return r
+	}
+
+	// Try baseDir/path.ll
+	candidateExt := candidate + ".ll"
+	if _, err := os.Stat(candidateExt); err == nil {
+		abs, _ := filepath.Abs(candidateExt)
 		return abs
 	}
 
-	if _, err := os.Stat(path); err == nil {
-		abs, _ := filepath.Abs(path)
+	// Try path as-is (file or directory)
+	if r := resolveDir(path); r != "" {
+		return r
+	}
+
+	// Try path.ll
+	pathExt := path + ".ll"
+	if _, err := os.Stat(pathExt); err == nil {
+		abs, _ := filepath.Abs(pathExt)
 		return abs
 	}
 

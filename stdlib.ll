@@ -24,13 +24,16 @@
   (file-exists? (string-append base-path "/" module-name ".ll")))
 
 ;;; Этот макрос ищет файл во ВРЕМЯ КОМПИЛЯЦИИ
+;;; Сначала ищет <path>/<name>.ll, затем <path>/<name>/main.ll
 (define-macro (import module-name)
   (define (find-module-file name paths)
     (cond
       ((null? paths) #f)
       ((module-exists? (car paths) name)
        (string-append (car paths) "/" name ".ll"))
-      (#t (find-module-file name (cdr paths)))))
+      (#t (if (file-exists? (string-append (car paths) "/" name "/main.ll"))
+              (string-append (car paths) "/" name "/main.ll")
+              (find-module-file name (cdr paths))))))
   
   (define found-path (find-module-file module-name *module-paths*))
   
