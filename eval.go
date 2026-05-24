@@ -1,10 +1,14 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"io"
 	"os"
 )
+
+//go:embed stdlib.ll
+var stdlibSource string
 
 type Eval struct {
 	env    *Env
@@ -21,7 +25,15 @@ func NewEval() *Eval {
 		w:      os.Stdout,
 	}
 	e.initBuiltins()
+	e.loadStdlib()
 	return e
+}
+
+func (e *Eval) loadStdlib() {
+	err := e.EvalString(stdlibSource)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\033[31mWarning: stdlib error: %v\033[0m\n", err)
+	}
 }
 
 func (e *Eval) SetOutput(w io.Writer) {
