@@ -10,7 +10,20 @@ import (
 func main() {
 	args := os.Args[1:]
 
+	if len(args) >= 2 && args[0] == "-b" {
+		err := runBundle(args[1:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\033[31mError: %v\033[0m\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(args) == 0 {
+		if bd, err := readBundle(); err == nil {
+			runBundled(bd)
+			return
+		}
 		runRepl()
 		return
 	}
@@ -30,8 +43,19 @@ func printHelp() {
 	fmt.Println("Usage:")
 	fmt.Println("  ll                  Start REPL")
 	fmt.Println("  ll <file.ll>        Run script")
+	fmt.Println("  ll -b <file.ll>     Bundle script and deps into executable")
+	fmt.Println("  ll -b <file> -o <out>  Bundle with custom output path")
 	fmt.Println("  ll -h               Show this help")
 	fmt.Println("  ll -v               Show version")
+}
+
+func runBundled(bd *BundleData) {
+	eval := NewEvalWithVFS(bd.VFS)
+	err := eval.EvalString(bd.Main)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\033[31mError: %v\033[0m\n", err)
+		os.Exit(1)
+	}
 }
 
 func runFile(filename string) {

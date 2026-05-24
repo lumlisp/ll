@@ -15,14 +15,24 @@ type Eval struct {
 	lexer  *Lexer
 	parser *Parser
 	w      io.Writer
+	vfs    map[string]string
 }
 
 func NewEval() *Eval {
+	return newEval(nil)
+}
+
+func NewEvalWithVFS(vfs map[string]string) *Eval {
+	return newEval(vfs)
+}
+
+func newEval(vfs map[string]string) *Eval {
 	e := &Eval{
 		env:    NewEnv(nil),
 		lexer:  &Lexer{},
 		parser: &Parser{},
 		w:      os.Stdout,
+		vfs:    vfs,
 	}
 	e.initBuiltins()
 	e.loadStdlib()
@@ -524,11 +534,22 @@ func (e *Eval) evalRequire(expr *Cons, env *Env) (Value, error) {
 	if !ok {
 		return nil, fmt.Errorf("require: filename must be a string")
 	}
-	data, err := os.ReadFile(string(filename))
-	if err != nil {
-		return nil, fmt.Errorf("cannot find file: %s", filename)
+
+	var source string
+	if e.vfs != nil {
+		if content, ok := e.vfs[string(filename)]; ok {
+			source = content
+		}
 	}
-	tokens, err := e.lexer.Tokenize(string(data))
+	if source == "" {
+		data, err := os.ReadFile(string(filename))
+		if err != nil {
+			return nil, fmt.Errorf("cannot find file: %s", filename)
+		}
+		source = string(data)
+	}
+
+	tokens, err := e.lexer.Tokenize(source)
 	if err != nil {
 		return nil, err
 	}
