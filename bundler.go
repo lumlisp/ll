@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 var bundleMagic = [8]byte{'L', 'L', 'B', 'N', 'D', 'L', '\x00', '\x00'}
@@ -20,7 +19,6 @@ type bundler struct {
 	lexer  *Lexer
 	parser *Parser
 	files  map[string]bool
-	order  []string
 	vfs    map[string]string
 }
 
@@ -52,17 +50,12 @@ func runBundle(args []string) error {
 		return err
 	}
 
-	var sb strings.Builder
-	for _, path := range b.order {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("cannot read %s: %w", path, err)
-		}
-		sb.Write(data)
-		sb.WriteByte('\n')
+	mainData, err := os.ReadFile(absInput)
+	if err != nil {
+		return fmt.Errorf("cannot read main file: %w", err)
 	}
 
-	bd := BundleData{Main: sb.String(), VFS: b.vfs}
+	bd := BundleData{Main: string(mainData), VFS: b.vfs}
 	bundleJSON, err := json.Marshal(bd)
 	if err != nil {
 		return fmt.Errorf("json error: %w", err)
@@ -135,7 +128,6 @@ func (b *bundler) collectDeps(absPath string) error {
 		}
 	}
 
-	b.order = append(b.order, absPath)
 	return nil
 }
 
