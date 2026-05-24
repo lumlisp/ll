@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -1363,6 +1364,20 @@ func (e *Eval) builtinExit(args []Value) (Value, error) {
 	}
 	os.Exit(code)
 	return Nil, nil
+}
+
+func (e *Eval) builtinGetFileDir(args []Value) (Value, error) {
+	if len(args) != 0 {
+		return nil, fmt.Errorf("get-file-dir requires 0 arguments")
+	}
+	if e.currentFile == "" {
+		return String(""), nil
+	}
+	abs, err := filepath.Abs(e.currentFile)
+	if err != nil {
+		return String(""), nil
+	}
+	return String(filepath.Dir(abs)), nil
 }
 
 // --- Vector operations ---

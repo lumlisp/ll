@@ -11,11 +11,12 @@ import (
 var stdlibSource string
 
 type Eval struct {
-	env    *Env
-	lexer  *Lexer
-	parser *Parser
-	w      io.Writer
-	vfs    map[string]string
+	env         *Env
+	lexer       *Lexer
+	parser      *Parser
+	w           io.Writer
+	vfs         map[string]string
+	currentFile string
 }
 
 func NewEval() *Eval {
@@ -48,6 +49,18 @@ func (e *Eval) loadStdlib() {
 
 func (e *Eval) SetOutput(w io.Writer) {
 	e.w = w
+}
+
+func (e *Eval) SetScriptArgs(args []string) {
+	vals := make([]Value, len(args))
+	for i, a := range args {
+		vals[i] = String(a)
+	}
+	e.env.Set("*args*", SliceToList(vals))
+}
+
+func (e *Eval) SetCurrentFile(file string) {
+	e.currentFile = file
 }
 
 func (e *Eval) Env() *Env {
@@ -762,6 +775,7 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("nil", Nil)
 	e.env.Set("true", Boolean(true))
 	e.env.Set("false", Boolean(false))
+	e.env.Set("*args*", Nil)
 
 	e.env.Set("+", &Primitive{Name: "+", Fn: e.builtinAdd})
 	e.env.Set("-", &Primitive{Name: "-", Fn: e.builtinSub})
@@ -871,4 +885,5 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("shell->string", &Primitive{Name: "shell->string", Fn: e.builtinShellToString})
 
 	e.env.Set("exit", &Primitive{Name: "exit", Fn: e.builtinExit})
+	e.env.Set("get-file-dir", &Primitive{Name: "get-file-dir", Fn: e.builtinGetFileDir})
 }

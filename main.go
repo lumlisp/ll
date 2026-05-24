@@ -34,7 +34,7 @@ func main() {
 	case "-v", "--version":
 		fmt.Println("LL v0.2.0 - Lum Lisp")
 	default:
-		runFile(args[0])
+		runFile(args[0], args[1:])
 	}
 }
 
@@ -42,7 +42,7 @@ func printHelp() {
 	fmt.Println("LL v0.2.0 - Lum Lisp")
 	fmt.Println("Usage:")
 	fmt.Println("  ll                  Start REPL")
-	fmt.Println("  ll <file.ll>        Run script")
+	fmt.Println("  ll <file.ll> [args...]  Run script with arguments")
 	fmt.Println("  ll -b <file.ll>     Bundle script and deps into executable")
 	fmt.Println("  ll -b <file> -o <out>  Bundle with custom output path")
 	fmt.Println("  ll -h               Show this help")
@@ -51,6 +51,7 @@ func printHelp() {
 
 func runBundled(bd *BundleData) {
 	eval := NewEvalWithVFS(bd.VFS)
+	eval.SetScriptArgs(os.Args[1:])
 	err := eval.EvalString(bd.Main)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\033[31mError: %v\033[0m\n", err)
@@ -58,8 +59,10 @@ func runBundled(bd *BundleData) {
 	}
 }
 
-func runFile(filename string) {
+func runFile(filename string, scriptArgs []string) {
 	eval := NewEval()
+	eval.SetScriptArgs(scriptArgs)
+	eval.SetCurrentFile(filename)
 
 	data, err := os.ReadFile(filename)
 	if err != nil {
