@@ -4,3 +4,6 @@ ll-go
 ll
 *.ll.php
 *.expected
+
+# LPM packages
+ll_modules/

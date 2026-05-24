@@ -1,0 +1,92 @@
+#!/usr/bin/env ll
+
+(define *global-path* "/etc/ll/modules")
+
+(define (string-contains? s substr)
+  (> (length (string-split s substr)) 1))
+
+(define (usage)
+  (println "Usage:")
+  (println "  lpm init                        Initialize LPM project")
+  (println "  lpm require <vendor/pkg>        Install package locally")
+  (println "  lpm require --global <vendor/pkg>  Install globally")
+  (println "  lpm --help                      Show this help"))
+
+(define (cmd-init)
+  (println "Initializing LPM project...")
+
+  (system "mkdir -p ll_modules")
+  (println "  Created ll_modules/")
+
+  (if (file-exists? ".gitignore")
+    (begin
+      (define content (file->string ".gitignore"))
+      (if (string-contains? content "ll_modules")
+        (println "  .gitignore already ignores ll_modules/")
+        (string->file ".gitignore"
+          (string-append (string-trim content) "\n\n# LPM packages\nll_modules/\n"))))
+    (begin
+      (string->file ".gitignore" "# LPM packages\nll_modules/\n")
+      (println "  Created .gitignore")))
+
+  (println "")
+  (println "Done! Use 'lpm require <vendor/package>' to install packages."))
+
+(define (cmd-require args)
+  (define global? #f)
+  (define pkg "")
+
+  (if (null? args)
+    (begin (println "Error: package name required") (usage) (exit 1))
+    (if (string=? (car args) "--global")
+      (if (null? (cdr args))
+        (begin (println "Error: package name required") (usage) (exit 1))
+        (begin (set! global? #t) (set! pkg (car (cdr args)))))
+      (set! pkg (car args))))
+
+  (define parts (string-split pkg "/"))
+  (if (not (= (length parts) 2))
+    (begin (println "Error: package must be <vendor>/<package> format") (exit 1)))
+
+  (define vendor (car parts))
+  (define name (car (cdr parts)))
+
+  (define target-dir
+    (if global?
+      (string-append *global-path* "/" vendor "/" name)
+      (string-append "ll_modules/" vendor "/" name)))
+
+  (define repo-url (string-append "https://github.com/" vendor "/" name ".git"))
+
+  (println "Installing" pkg "...")
+  (println "  Repo:" repo-url)
+  (println "  Target:" target-dir)
+
+  (if (file-exists? target-dir)
+    (begin (println "  Already installed at" target-dir) (exit 1)))
+
+  (define parent-dir
+    (if global?
+      (string-append *global-path* "/" vendor)
+      (string-append "ll_modules/" vendor)))
+  (system (string-append "mkdir -p " parent-dir))
+
+  (define result (system (string-append "git clone " repo-url " " target-dir)))
+  (if (= result 0)
+    (println "  Done!")
+    (println "  Error: git clone failed (exit code:" result ")")))
+
+(define (main)
+  (define args *args*)
+
+  (if (null? args)
+    (usage)
+    (if (string=? (car args) "--help")
+      (usage)
+      (if (string=? (car args) "init")
+        (cmd-init)
+        (if (string=? (car args) "require")
+          (cmd-require (cdr args))
+          (begin (println "Unknown command:" (car args)) (usage)))))))
+
+(main)
