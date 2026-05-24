@@ -1,0 +1,279 @@
+# Lum Lisp Language Reference
+
+## Overview
+
+Lum Lisp is a Lisp dialect implemented in Go. It features lexical scoping,
+first-class closures, vectors, macros, and a comprehensive standard library.
+
+## Running
+
+```sh
+go build -o ll .
+./ll                   # REPL
+./ll file.ll           # run file
+./ll --help            # usage info
+./ll --version         # version info
+```
+
+## Syntax
+
+### Comments
+```
+; line comment
+```
+
+### Shebang
+```
+#!/usr/bin/env ll
+```
+Only recognized on the very first line of a file.
+
+### Literals
+
+| Syntax     | Type    |
+|------------|---------|
+| `42`       | Integer |
+| `-7`       | Integer |
+| `3.14`     | Float   |
+| `"hello"`  | String  |
+| `#t`       | Boolean true  |
+| `#f`       | Boolean false |
+| `'x`       | Shorthand for `(quote x)` |
+| `(a b c)`  | List (Cons cells) |
+| `#(1 2 3)` | Vector |
+
+### Identifiers (Symbols)
+```
+foo  bar?  +  <=>  my-func_1
+```
+Almost any character except whitespace, `(`, `)`, `"`, `;`, `#` (unless starting `#t`/`#f`/`#(`).
+
+## Types
+
+| Type      | Representation | Truthy? |
+|-----------|---------------|---------|
+| `Integer` | 64-bit int    | Always  |
+| `Float`   | 64-bit float  | Always  |
+| `String`  | UTF-8 text    | Always  |
+| `Boolean` | `#t` / `#f`   | As-is   |
+| `Symbol`  | Named identifier | Always |
+| `Cons`    | Pair `(a . b)` or list `(a b c)` | Always |
+| `Nil`     | `()` (empty list) | **False** |
+| `Vector`  | `#(1 2 3)`   | Always  |
+| `Closure` | User-defined function | Always |
+| `Primitive` | Built-in function | Always |
+| `Macro`   | Macro (define-macro) | Always |
+
+Only `#f` and `()` are falsey; everything else is truthy.
+
+## Special Forms
+
+### `define`
+```
+(define x 42)
+(define (fn a b) (+ a b))
+(define (fn a &rest rest) ...)
+```
+`&rest` captures remaining arguments as a list.
+
+### `set!`
+```
+(set! x 99)
+```
+
+### `if`
+```
+(if cond then-expr else-expr)
+```
+
+### `cond`
+```
+(cond
+  (test1 expr1)
+  (test2 expr2)
+  (else expr3))
+```
+
+### `lambda`
+```
+(lambda (x y) (+ x y))
+(lambda (x &rest rest) (apply + x rest))
+```
+
+### `quote`
+```
+(quote (1 2 3))   ; => (1 2 3)
+```
+
+### `begin`
+```
+(begin expr1 expr2 expr3)   ; returns last
+```
+
+### `while`
+```
+(while condition body ...)
+```
+
+### `for`
+```
+(for var start end body ...)
+```
+Iterates `var` from `start` to `end` (exclusive), incrementing by 1 each step.
+
+### `and` / `or`
+```
+(and expr ...)    ; short-circuit
+(or expr ...)     ; short-circuit
+```
+
+### `require` / `include`
+```
+(require "file.ll")   ; loads once (tracks loaded files)
+(include "file.ll")   ; loads every time
+```
+Paths are relative to the current file's directory.
+
+### `define-macro`
+```
+(define-macro (name params ...) body)
+(define-macro (unless cond body) (list (quote if) (list (quote not) cond) body))
+```
+Macros receive unevaluated argument expressions and return an expression to evaluate.
+
+## Standard Library
+
+### Arithmetic
+| Function | Description |
+|----------|-------------|
+| `(+ a ...)` | Sum |
+| `(- a ...)` | Subtract |
+| `(* a ...)` | Multiply |
+| `(/ a ...)` | Divide |
+| `(% a b)`   | Modulo |
+| `(abs n)`   | Absolute value |
+| `(min a b ...)` | Minimum |
+| `(max a b ...)` | Maximum |
+| `(expt base pow)` | Exponentiation |
+| `(sqrt n)`  | Square root |
+| `(quotient a b)` | Integer division |
+| `(remainder a b)` | Remainder |
+| `(floor n)` | Round down |
+| `(ceil n)`  | Round up |
+| `(round n)` | Round to nearest |
+| `(inc n)`   | `(+ n 1)` |
+| `(dec n)`   | `(- n 1)` |
+
+### Comparisons
+| Function | Returns |
+|----------|---------|
+| `(= a b ...)` | `#t` if all equal |
+| `(> a b ...)` | `#t` if strictly decreasing |
+| `(< a b ...)` | `#t` if strictly increasing |
+| `(>= a b ...)` | `#t` if non-increasing |
+| `(<= a b ...)` | `#t` if non-decreasing |
+
+### List Operations
+| Function | Description |
+|----------|-------------|
+| `(car pair)` | First element |
+| `(cdr pair)` | Rest |
+| `(cons a b)` | Construct pair |
+| `(list a ...)` | Create list |
+| `(null? x)`   | `#t` if Nil |
+| `(pair? x)`   | `#t` if Cons |
+| `(list? x)`   | `#t` if proper list |
+| `(length lst)` | List length |
+| `(append lst ...)` | Concatenate lists |
+| `(reverse lst)` | Reverse list |
+| `(list-ref lst n)` | Nth element (0-based) |
+| `(list-tail lst n)` | Nth cdr |
+| `(take lst n)` | First n elements |
+| `(drop lst n)` | All but first n |
+| `(range start end)` | Integers from start to end-1 |
+| `(member x lst)` | First tail starting with x, or `#f` |
+| `(assoc key alist)` | Lookup key in association list |
+| `(map fn lst)` | Apply fn to each element |
+| `(filter pred lst)` | Keep elements matching pred |
+| `(foldl fn init lst)` | Left fold |
+| `(foldr fn init lst)` | Right fold |
+
+### Predicates
+| Function | Description |
+|----------|-------------|
+| `(symbol? x)` | `#t` if Symbol |
+| `(number? x)` | `#t` if Integer or Float |
+| `(integer? x)` | `#t` if Integer |
+| `(float? x)` | `#t` if Float |
+| `(string? x)` | `#t` if String |
+| `(boolean? x)` | `#t` if Boolean |
+| `(fn? x)` | `#t` if Closure or Primitive |
+| `(zero? n)` | `#t` if 0 |
+| `(even? n)` | `#t` if even |
+| `(odd? n)` | `#t` if odd |
+| `(positive? n)` | `#t` if > 0 |
+| `(negative? n)` | `#t` if < 0 |
+| `(not x)` | Boolean negation |
+| `(equal? a b)` | Structural equality |
+| `(eq? a b)` | Identity equality |
+
+### String Operations
+| Function | Description |
+|----------|-------------|
+| `(string-length s)` | Character count |
+| `(string-ref s n)` | Nth character (as string) |
+| `(substring s start end)` | Slice |
+| `(string-append s ...)` | Concatenate |
+| `(string=? a b)` | Case-sensitive equality |
+| `(string-ci=? a b)` | Case-insensitive equality |
+| `(string<? a b)` | Less-than |
+| `(string>? a b)` | Greater-than |
+| `(string-downcase s)` | Lowercase |
+| `(string-upcase s)` | Uppercase |
+| `(string-trim s)` | Strip leading/trailing whitespace |
+| `(string-split s sep)` | Split on separator |
+| `(string-join parts sep)` | Join with separator |
+| `(number->string n)` | Number to string |
+| `(string->number s)` | String to number (or `#f`) |
+| `(symbol->string s)` | Symbol name to string |
+| `(string->symbol s)` | String to symbol |
+
+### Vectors
+| Function | Description |
+|----------|-------------|
+| `(vector x ...)` | Create vector |
+| `(make-vector n)` | Zero-filled vector of length n |
+| `(vector-ref v i)` | Index (0-based) |
+| `(vector-set! v i x)` | Mutate element |
+| `(vector-length v)` | Length |
+| `(vector? x)` | `#t` if Vector |
+| `(vector->list v)` | Convert to list |
+| `(list->vector lst)` | Convert to vector |
+| `(vector-fill! v x)` | Fill all elements |
+| `(vector-map fn v)` | Map over elements |
+
+### I/O
+| Function | Description |
+|----------|-------------|
+| `(display x)` | Print without newline (no quotes) |
+| `(println x ...)` | Print with newline |
+| `(write x)` | Print with quoting |
+| `(file->string path)` | Read file to string |
+| `(string->file path content)` | Write string to file |
+| `(file-exists? path)` | `#t` if file exists |
+| `(delete-file path)` | Remove file |
+
+### System
+| Function | Description |
+|----------|-------------|
+| `(system cmd)` | Run command, print output, return exit code |
+| `(shell->string cmd)` | Run command, capture stdout as string |
+
+## Examples
+
+See `examples/` directory:
+- `hello.ll` — Hello world, variables, math, lists
+- `fib.ll` — Recursive Fibonacci
+- `fizzbuzz.ll` — FizzBuzz with `for` and `cond`
+- `php-interop.ll` — Standard library demo (replaces old PHP interop)
+- `list-ports.ll` — System command output with `shell->string`
