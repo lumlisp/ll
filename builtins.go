@@ -820,6 +820,14 @@ func (e *Eval) builtinIsFn(args []Value) (Value, error) {
 	return Boolean(ok1 || ok2 || ok3), nil
 }
 
+func (e *Eval) builtinIsFuture(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("future? requires 1 argument")
+	}
+	_, ok := args[0].(*Future)
+	return Boolean(ok), nil
+}
+
 func (e *Eval) builtinNot(args []Value) (Value, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("not requires 1 argument")

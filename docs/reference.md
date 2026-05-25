@@ -65,6 +65,7 @@ Almost any character except whitespace, `(`, `)`, `"`, `;`, `#` (unless starting
 | `Closure` | User-defined function | Always |
 | `Primitive` | Built-in function | Always |
 | `Macro`   | Macro (define-macro) | Always |
+| `Future`  | Async result (future/co) | Always |
 
 Only `#f` and `()` are falsey; everything else is truthy.
 
@@ -135,6 +136,53 @@ Iterates `var` from `start` to `end` (exclusive), incrementing by 1 each step.
 (include "file.ll")   ; loads every time
 ```
 Paths are relative to the current file's directory. Also supports directory modules: `(require "mymod")` resolves to `mymod/main.ll` if the path is a directory.
+
+### `future`
+```
+(future expr ...)
+```
+Evaluates body expressions in a new goroutine and returns a `Future` value.
+Use `await` to retrieve the result.
+
+```scheme
+(define f (future (+ 1 2)))
+(println (await f))  ; => 3
+```
+
+### `await`
+```
+(await future)
+```
+Blocks until the given `Future` resolves, then returns its value. If the future
+computation raised an error, `await` re-throws it.
+
+```scheme
+(await (future (* 3 4)))  ; => 12
+```
+
+### `co`
+```
+(co (params ...) body ...)
+```
+Creates an **async closure** — like `lambda`, but calling it spawns a goroutine
+and returns a `Future` instead of running synchronously.
+
+```scheme
+(define slow-add (co (a b)
+  (+ a b)))
+
+(println (await (slow-add 10 20)))  ; => 30
+```
+
+Use with `define` to create named async functions. Multiple futures can run in
+parallel and be awaited later:
+
+```scheme
+(define f1 (slow-add 1 2))
+(define f2 (slow-add 3 4))
+(println (await f1))  ; => 3
+(println (await f2))  ; => 7
+```
 
 ### `define-macro`
 ```
@@ -243,6 +291,7 @@ Module resolution order for each path:
 | `(string? x)` | `#t` if String |
 | `(boolean? x)` | `#t` if Boolean |
 | `(fn? x)` | `#t` if Closure or Primitive |
+| `(future? x)` | `#t` if Future |
 | `(zero? n)` | `#t` if 0 |
 | `(even? n)` | `#t` if even |
 | `(odd? n)` | `#t` if odd |
@@ -312,3 +361,4 @@ See `examples/` directory:
 - `fizzbuzz.ll` — FizzBuzz with `for` and `cond`
 - `php-interop.ll` — Standard library demo (replaces old PHP interop)
 - `list-ports.ll` — System command output with `shell->string`
+- `async.ll` — `future`, `await`, `co` async programming

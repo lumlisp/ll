@@ -47,6 +47,8 @@ func Display(w io.Writer, v Value) {
 		fmt.Fprint(w, "#<macro>")
 	case *Closure:
 		fmt.Fprint(w, "#<function>")
+	case *Future:
+		fmt.Fprint(w, "#<future>")
 	default:
 		fmt.Fprint(w, v.String())
 	}
@@ -112,6 +114,8 @@ func mustSprint(v Value) string {
 		return "#<macro>"
 	case *Closure:
 		return "#<function>"
+	case *Future:
+		return "#<future>"
 	default:
 		return fmt.Sprintf("%v", v)
 	}

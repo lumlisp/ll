@@ -105,6 +105,7 @@ type Closure struct {
 	Params  []*Sym
 	Body    []Value
 	HasRest bool
+	isAsync bool
 }
 
 func (*Closure) isValue()         {}
@@ -115,6 +116,38 @@ type Macro struct {
 	Params  []*Sym
 	Body    []Value
 	HasRest bool
+}
+
+type Future struct {
+	result chan Value
+	err    chan error
+}
+
+func (*Future) isValue()         {}
+func (f *Future) String() string { return "#<future>" }
+
+func NewFuture() *Future {
+	return &Future{
+		result: make(chan Value, 1),
+		err:    make(chan error, 1),
+	}
+}
+
+func (f *Future) Resolve(val Value, err error) {
+	if err != nil {
+		f.err <- err
+	} else {
+		f.result <- val
+	}
+}
+
+func (f *Future) Await() (Value, error) {
+	select {
+	case val := <-f.result:
+		return val, nil
+	case err := <-f.err:
+		return nil, err
+	}
 }
 
 func (*Macro) isValue()         {}

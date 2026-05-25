@@ -145,6 +145,12 @@ func (e *Eval) eval(expr Value, env *Env) (Value, error) {
 			return e.evalRequire(cons, env)
 		case "define-macro":
 			return e.evalDefineMacro(cons, env)
+		case "future":
+			return e.evalFuture(cons, env)
+		case "await":
+			return e.evalAwait(cons, env)
+		case "co":
+			return e.evalCo(cons, env)
 		}
 	}
 
@@ -668,6 +674,23 @@ func (e *Eval) applyClosure(fn *Closure, args []Value) (Value, error) {
 		}
 	}
 
+	if fn.isAsync {
+		f := NewFuture()
+		go func() {
+			var result Value = Nil
+			for _, bodyExpr := range fn.Body {
+				var err error
+				result, err = e.eval(bodyExpr, env)
+				if err != nil {
+					f.Resolve(Nil, err)
+					return
+				}
+			}
+			f.Resolve(result, nil)
+		}()
+		return f, nil
+	}
+
 	var result Value = Nil
 	for _, bodyExpr := range fn.Body {
 		var err error
@@ -771,6 +794,111 @@ func (e *Eval) applyMacro(m *Macro, rawArgs []Value) (Value, error) {
 	return result, nil
 }
 
+func (e *Eval) evalFuture(expr *Cons, env *Env) (Value, error) {
+	args := expr.Cdr
+	if args == Nil {
+		return nil, fmt.Errorf("future requires at least one body expression")
+	}
+
+	f := NewFuture()
+
+	go func() {
+		body := args
+		var result Value = Nil
+		var err error
+		for body != Nil {
+			bc, ok := body.(*Cons)
+			if !ok {
+				break
+			}
+			result, err = e.eval(bc.Car, env)
+			if err != nil {
+				f.Resolve(Nil, err)
+				return
+			}
+			body = bc.Cdr
+		}
+		f.Resolve(result, nil)
+	}()
+
+	return f, nil
+}
+
+func (e *Eval) evalAwait(expr *Cons, env *Env) (Value, error) {
+	args := expr.Cdr
+	argCons, ok := args.(*Cons)
+	if !ok {
+		return nil, fmt.Errorf("await requires 1 argument")
+	}
+
+	val, err := e.eval(argCons.Car, env)
+	if err != nil {
+		return nil, err
+	}
+
+	f, ok := val.(*Future)
+	if !ok {
+		return nil, fmt.Errorf("await: argument must be a future")
+	}
+
+	return f.Await()
+}
+
+func (e *Eval) evalCo(expr *Cons, env *Env) (Value, error) {
+	args := expr.Cdr
+	paramsCons, ok := args.(*Cons)
+	if !ok {
+		return nil, fmt.Errorf("co requires parameter list")
+	}
+
+	paramsList := paramsCons.Car
+	bodyList := paramsCons.Cdr
+
+	if paramsList != Nil {
+		if _, ok := paramsList.(*Cons); !ok {
+			return nil, fmt.Errorf("co: parameter list must be a list")
+		}
+	}
+
+	var params []*Sym
+	hasRest := false
+	if paramsList != Nil {
+		for p := paramsList; p != Nil; p = p.(*Cons).Cdr {
+			pc := p.(*Cons)
+			psym, ok := pc.Car.(*Sym)
+			if !ok {
+				return nil, fmt.Errorf("co: parameters must be symbols")
+			}
+			if psym.Name == "&rest" {
+				hasRest = true
+			}
+			params = append(params, psym)
+		}
+	}
+
+	var body []Value
+	for bodyList != Nil {
+		bc, ok := bodyList.(*Cons)
+		if !ok {
+			break
+		}
+		body = append(body, bc.Car)
+		bodyList = bc.Cdr
+	}
+
+	if len(body) == 0 {
+		return nil, fmt.Errorf("co requires at least one body expression")
+	}
+
+	return &Closure{
+		Env:     env,
+		Params:  params,
+		Body:    body,
+		HasRest: hasRest,
+		isAsync: true,
+	}, nil
+}
+
 func (e *Eval) initBuiltins() {
 	e.env.Set("nil", Nil)
 	e.env.Set("true", Boolean(true))
@@ -818,6 +946,7 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("boolean?", &Primitive{Name: "boolean?", Fn: e.builtinIsBoolean})
 	e.env.Set("list?", &Primitive{Name: "list?", Fn: e.builtinIsList})
 	e.env.Set("fn?", &Primitive{Name: "fn?", Fn: e.builtinIsFn})
+	e.env.Set("future?", &Primitive{Name: "future?", Fn: e.builtinIsFuture})
 	e.env.Set("not", &Primitive{Name: "not", Fn: e.builtinNot})
 	e.env.Set("zero?", &Primitive{Name: "zero?", Fn: e.builtinZero})
 	e.env.Set("even?", &Primitive{Name: "even?", Fn: e.builtinEven})

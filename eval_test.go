@@ -369,6 +369,129 @@ func TestEvalPredicates(t *testing.T) {
 	}
 }
 
+func TestEvalFuture(t *testing.T) {
+	e := NewEval()
+	v, err := e.Eval(parserExpr(t, "(future (+ 1 2))"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok := v.(*Future)
+	if !ok {
+		t.Fatalf("expected Future, got %T", v)
+	}
+	result, err := f.Await()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != Integer(3) {
+		t.Fatalf("expected 3, got %v", result)
+	}
+}
+
+func TestEvalFutureAwait(t *testing.T) {
+	e := NewEval()
+	v, err := e.Eval(parserExpr(t, "(await (future (+ 1 2)))"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != Integer(3) {
+		t.Fatalf("expected 3, got %v", v)
+	}
+}
+
+func TestEvalFutureAwaitMultiExpr(t *testing.T) {
+	e := NewEval()
+	v, err := e.Eval(parserExpr(t, "(await (future (define x 42) (+ x 1)))"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != Integer(43) {
+		t.Fatalf("expected 43, got %v", v)
+	}
+}
+
+func TestEvalFuturePredicate(t *testing.T) {
+	e := NewEval()
+	v, err := e.Eval(parserExpr(t, "(future? (future 1))"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != Boolean(true) {
+		t.Fatalf("expected #t, got %v", v)
+	}
+
+	v2 := evalOne(t, "(future? 42)")
+	if v2 != Boolean(false) {
+		t.Fatalf("expected #f, got %v", v2)
+	}
+}
+
+func TestEvalCo(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, "(define f (co () (+ 1 2)))"))
+	v, err := e.Eval(parserExpr(t, "(await (f))"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != Integer(3) {
+		t.Fatalf("expected 3, got %v", v)
+	}
+}
+
+func TestEvalCoWithArgs(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, "(define async-add (co (a b) (+ a b)))"))
+	v, err := e.Eval(parserExpr(t, "(await (async-add 10 20))"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != Integer(30) {
+		t.Fatalf("expected 30, got %v", v)
+	}
+}
+
+func TestEvalCoDirect(t *testing.T) {
+	e := NewEval()
+	fn, err := e.Eval(parserExpr(t, "(co (x) (* x x))"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fnVal, ok := fn.(*Closure)
+	if !ok {
+		t.Fatalf("expected Closure, got %T", fn)
+	}
+	if !fnVal.isAsync {
+		t.Fatal("expected async closure")
+	}
+}
+
+func TestEvalParallelFutures(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, "(define slow-add (co (a b) (+ a b)))"))
+
+	v1, _ := e.Eval(parserExpr(t, "(slow-add 10 20)"))
+	v2, _ := e.Eval(parserExpr(t, "(slow-add 30 40)"))
+
+	f1, ok := v1.(*Future)
+	if !ok {
+		t.Fatalf("expected Future, got %T", v1)
+	}
+	f2, ok := v2.(*Future)
+	if !ok {
+		t.Fatalf("expected Future, got %T", v2)
+	}
+
+	r1, _ := f1.Await()
+	r2, _ := f2.Await()
+
+	if r1 != Integer(30) {
+		t.Fatalf("expected 30, got %v", r1)
+	}
+	if r2 != Integer(70) {
+		t.Fatalf("expected 70, got %v", r2)
+	}
+}
+
 func cons(a, b Value) *Cons {
 	return &Cons{Car: a, Cdr: b}
 }
