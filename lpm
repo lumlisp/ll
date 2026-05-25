@@ -109,6 +109,14 @@
 
   (define hash (string-trim (shell->string (string-append "git -C " target-dir " rev-parse HEAD"))))
   (println "  Hash:" hash)
+(if (file-exists? (string-append target-dir "/init.ll"))
+    (begin
+      (println "You can run init.ll to initialize the package")
+      (println "Press \"y\" to continue")
+      (if (string=? (read-line) "y")
+          (system (string-append "ll " target-dir "/init.ll"))
+          (println "Aborting...")))
+    #f)
 
   (if global?
     (println "  Installed globally (not saved to ll.json)")
