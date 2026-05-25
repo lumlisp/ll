@@ -1,16 +1,40 @@
 #!/usr/bin/env ll
 
 (define *global-path* "/etc/ll/modules")
+(define *manifest* "ll.json")
 
 (define (string-contains? s substr)
   (> (length (string-split s substr)) 1))
 
+(define (for-each fn lst)
+  (if (null? lst)
+    ()
+    (begin (fn (car lst))
+           (for-each fn (cdr lst)))))
+
 (define (usage)
   (println "Usage:")
   (println "  lpm init                        Initialize LPM project")
-  (println "  lpm require <vendor/pkg>        Install package locally")
+  (println "  lpm require <vendor/pkg>        Install and save dependency")
   (println "  lpm require --global <vendor/pkg>  Install globally")
+  (println "  lpm install                     Install all deps from ll.json")
   (println "  lpm --help                      Show this help"))
+
+(define (read-manifest)
+  (if (file-exists? *manifest*)
+    (json/decode (file->string *manifest*))
+    ()))
+
+(define (write-manifest data)
+  (string->file *manifest* (json/encode data)))
+
+(define (get-deps manifest)
+  (define pair (assoc "dependencies" manifest))
+  (if pair (cdr pair) ()))
+
+(define (get-name manifest)
+  (define pair (assoc "name" manifest))
+  (if pair (cdr pair) "."))
 
 (define (cmd-init)
   (println "Initializing LPM project...")
@@ -28,6 +52,12 @@
     (begin
       (string->file ".gitignore" "# LPM packages\nll_modules/\n")
       (println "  Created .gitignore")))
+
+  (if (file-exists? *manifest*)
+    (println "  ll.json already exists")
+    (begin
+      (write-manifest (list (cons "name" ".") (cons "dependencies" ())))
+      (println "  Created ll.json")))
 
   (println "")
   (println "Done! Use 'lpm require <vendor/package>' to install packages."))
@@ -71,10 +101,55 @@
       (string-append "ll_modules/" vendor)))
   (system (string-append "mkdir -p " parent-dir))
 
-  (define result (system (string-append "git clone " repo-url " " target-dir)))
-  (if (= result 0)
-    (println "  Done!")
-    (println "  Error: git clone failed (exit code:" result ")")))
+  (define clone-result (system (string-append "git clone " repo-url " " target-dir)))
+  (if (not (= clone-result 0))
+    (begin (println "  Error: git clone failed (exit code:" clone-result ")") (exit 1)))
+
+  (println "  Done!")
+
+  (define hash (string-trim (shell->string (string-append "git -C " target-dir " rev-parse HEAD"))))
+  (println "  Hash:" hash)
+
+  (if global?
+    (println "  Installed globally (not saved to ll.json)")
+    (begin
+      (define manifest (read-manifest))
+      (define name-val (get-name manifest))
+      (define deps (get-deps manifest))
+      (define info (list (cons "url" repo-url) (cons "version" "HEAD") (cons "hash" hash)))
+      (define new-deps (cons (cons pkg info) deps))
+      (write-manifest (list (cons "name" name-val) (cons "dependencies" new-deps)))
+      (println "  Updated ll.json"))))
+
+(define (install-pkg name info)
+  (define url (cdr (assoc "url" info)))
+  (define vendor (car (string-split name "/")))
+  (define pkg (car (cdr (string-split name "/"))))
+  (define target-dir (string-append "ll_modules/" vendor "/" pkg))
+
+  (if (file-exists? target-dir)
+    (println "  Already installed:" name)
+    (begin
+      (println "  Installing" name "...")
+      (system (string-append "mkdir -p ll_modules/" vendor))
+      (define result (system (string-append "git clone " url " " target-dir)))
+      (if (= result 0)
+        (println "    Done!")
+        (println "    Error: git clone failed for" name)))))
+
+(define (cmd-install)
+  (if (file-exists? *manifest*)
+    (begin
+      (println "Installing dependencies from ll.json...")
+      (define manifest (read-manifest))
+      (define deps (get-deps manifest))
+      (if (null? deps)
+        (println "  No dependencies to install.")
+        (for-each (lambda (dep) (install-pkg (car dep) (cdr dep))) deps))
+      (println "Done!"))
+    (begin
+      (println "Error: ll.json not found. Run 'lpm init' first.")
+      (exit 1))))
 
 (define (main)
   (define args *args*)
@@ -87,6 +162,8 @@
         (cmd-init)
         (if (string=? (car args) "require")
           (cmd-require (cdr args))
-          (begin (println "Unknown command:" (car args)) (usage)))))))
+          (if (string=? (car args) "install")
+            (cmd-install)
+            (begin (println "Unknown command:" (car args)) (usage))))))))
 
 (main)

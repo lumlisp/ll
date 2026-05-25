@@ -20,6 +20,9 @@ func (p *Parser) Parse(tokens []Token) ([]Value, error) {
 
 func (p *Parser) parseExpr(tokens []Token, i int) (Value, int, error) {
 	if i >= len(tokens) {
+		if len(tokens) > 0 {
+			return nil, 0, fmt.Errorf("line %d: unexpected end of input", tokens[len(tokens)-1].Line)
+		}
 		return nil, 0, fmt.Errorf("unexpected end of input")
 	}
 
@@ -29,13 +32,14 @@ func (p *Parser) parseExpr(tokens []Token, i int) (Value, int, error) {
 	case TkLParen:
 		return p.parseList(tokens, i+1)
 	case TkRParen:
-		return nil, 0, fmt.Errorf("unexpected ')'")
+		return nil, 0, fmt.Errorf("line %d: unexpected ')'", tok.Line)
 	case TkQuote:
 		expr, next, err := p.parseExpr(tokens, i+1)
 		if err != nil {
 			return nil, 0, err
 		}
-		return &Cons{Car: &Sym{Name: "quote"}, Cdr: &Cons{Car: expr, Cdr: Nil}}, next, nil
+		cons := &Cons{Car: &Sym{Name: "quote", Line: tok.Line}, Cdr: &Cons{Car: expr, Cdr: Nil, Line: tok.Line}, Line: tok.Line}
+		return cons, next, nil
 	case TkNumber:
 		return tok.Value, i + 1, nil
 	case TkString:
@@ -47,12 +51,13 @@ func (p *Parser) parseExpr(tokens []Token, i int) (Value, int, error) {
 	case TkSymbol:
 		return tok.Value, i + 1, nil
 	default:
-		return nil, 0, fmt.Errorf("unknown token: %v", tok)
+		return nil, 0, fmt.Errorf("line %d: unknown token: %v", tok.Line, tok)
 	}
 }
 
 func (p *Parser) parseVector(tokens []Token, i int) (Value, int, error) {
 	var items []Value
+	startLine := tokens[i-1].Line
 	for i < len(tokens) && tokens[i].Type != TkRParen {
 		expr, next, err := p.parseExpr(tokens, i)
 		if err != nil {
@@ -62,13 +67,14 @@ func (p *Parser) parseVector(tokens []Token, i int) (Value, int, error) {
 		i = next
 	}
 	if i >= len(tokens) {
-		return nil, 0, fmt.Errorf("unterminated vector")
+		return nil, 0, fmt.Errorf("line %d: unterminated vector", startLine)
 	}
 	return &Vector{Items: items}, i + 1, nil
 }
 
 func (p *Parser) parseList(tokens []Token, i int) (Value, int, error) {
 	var items []Value
+	line := tokens[i-1].Line
 	for i < len(tokens) && tokens[i].Type != TkRParen {
 		expr, next, err := p.parseExpr(tokens, i)
 		if err != nil {
@@ -78,7 +84,7 @@ func (p *Parser) parseList(tokens []Token, i int) (Value, int, error) {
 		i = next
 	}
 	if i >= len(tokens) {
-		return nil, 0, fmt.Errorf("unterminated list")
+		return nil, 0, fmt.Errorf("line %d: unterminated list", line)
 	}
 
 	dotIdx := -1
@@ -91,12 +97,15 @@ func (p *Parser) parseList(tokens []Token, i int) (Value, int, error) {
 
 	if dotIdx >= 0 {
 		if dotIdx+1 >= len(items) {
-			return nil, 0, fmt.Errorf("dotted pair: missing element after '.'")
+			return nil, 0, fmt.Errorf("line %d: dotted pair: missing element after '.'", line)
 		}
 		if dotIdx+2 < len(items) {
-			return nil, 0, fmt.Errorf("dotted pair: expected exactly one element after '.'")
+			return nil, 0, fmt.Errorf("line %d: dotted pair: expected exactly one element after '.'", line)
 		}
 		result := SliceToList(items[:dotIdx])
+		if cons, ok := result.(*Cons); ok && cons.Line == 0 {
+			cons.Line = line
+		}
 		for c := result.(*Cons); ; c = c.Cdr.(*Cons) {
 			if c.Cdr == Nil {
 				c.Cdr = items[dotIdx+1]
@@ -106,5 +115,9 @@ func (p *Parser) parseList(tokens []Token, i int) (Value, int, error) {
 		return result, i + 1, nil
 	}
 
-	return SliceToList(items), i + 1, nil
+	result := SliceToList(items)
+	if cons, ok := result.(*Cons); ok && cons.Line == 0 {
+		cons.Line = line
+	}
+	return result, i + 1, nil
 }

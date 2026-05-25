@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -943,4 +944,215 @@ func TestHttpRequestAccessors(t *testing.T) {
 	if len(body) == 0 {
 		t.Fatal("expected non-empty User-Agent in response")
 	}
+}
+
+func TestJsonEncode(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"(json/encode nil)", "null"},
+		{"(json/encode #t)", "true"},
+		{"(json/encode #f)", "false"},
+		{"(json/encode 42)", "42"},
+		{"(json/encode 3.14)", "3.14"},
+		{`(json/encode "hello")`, `"hello"`},
+		{`(json/encode "a\"b")`, `"a\"b"`},
+		{"(json/encode (vector 1 2 3))", "[1,2,3]"},
+		{`(json/encode (list "a" "b"))`, `["a","b"]`},
+		{`(json/encode (list (cons "k" 1) (cons "v" 2)))`, `{"k":1,"v":2}`},
+	}
+	for _, tt := range tests {
+		e := NewEval()
+		got, err := evalStringResult(t, e, tt.input)
+		if err != nil {
+			t.Errorf("eval error for %q: %v", tt.input, err)
+			continue
+		}
+		s, ok := got.(String)
+		if !ok {
+			t.Errorf("expected String, got %T for %q", got, tt.input)
+			continue
+		}
+		if string(s) != tt.want {
+			t.Errorf("json/encode %q: got %q, want %q", tt.input, string(s), tt.want)
+		}
+	}
+}
+
+func TestJsonDecode(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`(json/decode "null")`, "()"},
+		{`(json/decode "true")`, "#t"},
+		{`(json/decode "false")`, "#f"},
+		{`(json/decode "42")`, "42"},
+		{`(json/decode "3.14")`, "3.14"},
+		{`(json/decode "\"hello\"")`, "hello"},
+		{`(json/decode "[1,2,3]")`, "#(1 2 3)"},
+		{`(json/decode "{\"a\":1}")`, "((a . 1))"},
+	}
+	for _, tt := range tests {
+		e := NewEval()
+		got, err := evalStringResult(t, e, tt.input)
+		if err != nil {
+			t.Errorf("eval error for %q: %v", tt.input, err)
+			continue
+		}
+		s := FormatValue(got)
+		if s != tt.want {
+			t.Errorf("json/decode %q: got %q, want %q", tt.input, s, tt.want)
+		}
+	}
+}
+
+func TestJsonRoundtrip(t *testing.T) {
+	e := NewEval()
+	// encode -> decode roundtrip (keys sorted alphabetically)
+	expr := `(json/decode (json/encode (list (cons "name" "test") (cons "count" 42))))`
+	got, err := evalStringResult(t, e, expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cons, ok := got.(*Cons)
+	if !ok {
+		t.Fatalf("expected Cons, got %T", got)
+	}
+	// after roundtrip, keys are sorted: "count" before "name"
+	countPair := cons.Car.(*Cons)
+	if string(countPair.Car.(String)) != "count" {
+		t.Errorf("expected first key 'count', got %q", countPair.Car)
+	}
+	countVal, ok := countPair.Cdr.(Integer)
+	if !ok || int64(countVal) != 42 {
+		t.Errorf("expected count=42, got %v", countPair.Cdr)
+	}
+	namePair := cons.Cdr.(*Cons).Car.(*Cons)
+	if string(namePair.Car.(String)) != "name" || string(namePair.Cdr.(String)) != "test" {
+		t.Errorf("expected (name . \"test\"), got %v", namePair)
+	}
+}
+
+func TestJsonEncodeErrors(t *testing.T) {
+	e := NewEval()
+	_, err := evalStringResult(t, e, `(json/encode)`)
+	if err == nil {
+		t.Error("expected error for (json/encode) with no args")
+	}
+
+	_, err = evalStringResult(t, e, `(json/encode 1 2)`)
+	if err == nil {
+		t.Error("expected error for (json/encode) with extra args")
+	}
+}
+
+func TestJsonDecodeErrors(t *testing.T) {
+	e := NewEval()
+	_, err := evalStringResult(t, e, `(json/decode)`)
+	if err == nil {
+		t.Error("expected error for (json/decode) with no args")
+	}
+
+	_, err = evalStringResult(t, e, `(json/decode 42)`)
+	if err == nil {
+		t.Error("expected error for (json/decode) with non-string")
+	}
+
+	_, err = evalStringResult(t, e, `(json/decode "invalid{")`)
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestErrRuntimeFormat(t *testing.T) {
+	err := &ErrRuntime{File: "test.ll", Line: 5, Msg: "undefined variable: x"}
+	want := "test.ll:5: undefined variable: x"
+	if err.Error() != want {
+		t.Errorf("got %q, want %q", err.Error(), want)
+	}
+
+	err2 := &ErrRuntime{Line: 3, Msg: "syntax error"}
+	want2 := "line 3: syntax error"
+	if err2.Error() != want2 {
+		t.Errorf("got %q, want %q", err2.Error(), want2)
+	}
+
+	err3 := &ErrRuntime{Msg: "bare error"}
+	if err3.Error() != "bare error" {
+		t.Errorf("got %q, want %q", err3.Error(), "bare error")
+	}
+}
+
+func TestErrorWithFileLine(t *testing.T) {
+	e := NewEval()
+	e.SetCurrentFile("test.ll")
+
+	err := e.EvalString("(/ 1 0)")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	errStr := err.Error()
+	if errStr != "test.ll:1: division by zero" {
+		t.Errorf("unexpected error format: %q", errStr)
+	}
+
+	e2 := NewEval()
+	err = e2.EvalString("(undefined-var 42)")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	errStr = err.Error()
+	if errStr != "line 1: undefined variable: undefined-var" {
+		t.Errorf("unexpected error format: %q", errStr)
+	}
+}
+
+func TestErrorWithFileParserError(t *testing.T) {
+	e := NewEval()
+	e.SetCurrentFile("main.ll")
+
+	// parser error with line
+	err := e.EvalString("(\n  \n  )\n)")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	errStr := err.Error()
+	// the extra ')' is on line 4
+	if errStr != "main.ll:4: unexpected ')'" {
+		t.Errorf("unexpected error format: %q", errStr)
+	}
+}
+
+func TestErrorWithFileLexerError(t *testing.T) {
+	e := NewEval()
+	e.SetCurrentFile("script.ll")
+
+	// unterminated string
+	err := e.EvalString("\"hello\n")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	errStr := err.Error()
+	if errStr != "script.ll:1: unterminated string" {
+		t.Errorf("unexpected error format: %q", errStr)
+	}
+}
+
+// evalStringResult evaluates a single expression and returns the result
+func evalStringResult(t *testing.T, e *Eval, input string) (Value, error) {
+	t.Helper()
+	tokens, err := e.lexer.Tokenize(input)
+	if err != nil {
+		return nil, err
+	}
+	ast, err := e.parser.Parse(tokens)
+	if err != nil {
+		return nil, err
+	}
+	if len(ast) == 0 {
+		return nil, fmt.Errorf("empty ast")
+	}
+	return e.Eval(ast[0])
 }

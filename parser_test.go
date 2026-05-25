@@ -108,6 +108,72 @@ func TestParseUnterminated(t *testing.T) {
 	}
 }
 
+func TestParseConsLine(t *testing.T) {
+	p := &Parser{}
+	ast, err := p.Parse([]Token{
+		{Type: TkLParen, Line: 3},
+		{Type: TkSymbol, Value: &Sym{Name: "foo"}, Line: 3},
+		{Type: TkNumber, Value: Integer(42), Line: 3},
+		{Type: TkRParen, Line: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ast) != 1 {
+		t.Fatalf("expected 1 expr, got %d", len(ast))
+	}
+	cons, ok := ast[0].(*Cons)
+	if !ok {
+		t.Fatalf("expected Cons, got %T", ast[0])
+	}
+	if cons.Line != 3 {
+		t.Errorf("expected Cons.Line = 3, got %d", cons.Line)
+	}
+}
+
+func TestParseConsLineNested(t *testing.T) {
+	p := &Parser{}
+	// (a (b c)) on lines 1 and 2
+	ast, err := p.Parse([]Token{
+		{Type: TkLParen, Line: 1},
+		{Type: TkSymbol, Value: &Sym{Name: "a"}, Line: 1},
+		{Type: TkLParen, Line: 2},
+		{Type: TkSymbol, Value: &Sym{Name: "b"}, Line: 2},
+		{Type: TkSymbol, Value: &Sym{Name: "c"}, Line: 2},
+		{Type: TkRParen, Line: 2},
+		{Type: TkRParen, Line: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := ast[0].(*Cons)
+	if outer.Line != 1 {
+		t.Errorf("expected outer Cons.Line = 1, got %d", outer.Line)
+	}
+	inner := outer.Cdr.(*Cons).Car.(*Cons)
+	if inner.Line != 2 {
+		t.Errorf("expected inner Cons.Line = 2, got %d", inner.Line)
+	}
+}
+
+func TestParseConsLineQuote(t *testing.T) {
+	p := &Parser{}
+	ast, err := p.Parse([]Token{
+		{Type: TkQuote, Line: 5},
+		{Type: TkSymbol, Value: &Sym{Name: "x"}, Line: 5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cons, ok := ast[0].(*Cons)
+	if !ok {
+		t.Fatalf("expected Cons, got %T", ast[0])
+	}
+	if cons.Line != 5 {
+		t.Errorf("expected Cons.Line = 5 (from quote), got %d", cons.Line)
+	}
+}
+
 func mkTokens(items ...interface{}) []Token {
 	var toks []Token
 	for i := 0; i < len(items); i++ {

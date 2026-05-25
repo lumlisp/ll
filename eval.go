@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 )
 
 //go:embed stdlib.ll
@@ -72,17 +74,38 @@ func (e *Eval) EvalFile(filename string) error {
 	if err != nil {
 		return err
 	}
+	e.SetCurrentFile(filename)
 	return e.EvalString(string(data))
+}
+
+func (e *Eval) wrapFileErr(err error) error {
+	if err == nil || e.currentFile == "" {
+		return err
+	}
+	if _, ok := err.(*ErrRuntime); ok {
+		return err
+	}
+	msg := err.Error()
+	line := 0
+	if strings.HasPrefix(msg, "line ") {
+		endIdx := strings.Index(msg[5:], ": ")
+		if endIdx > 0 {
+			lineStr := msg[5 : 5+endIdx]
+			line, _ = strconv.Atoi(lineStr)
+			msg = msg[5+endIdx+2:]
+		}
+	}
+	return &ErrRuntime{File: e.currentFile, Line: line, Msg: msg}
 }
 
 func (e *Eval) EvalString(input string) error {
 	tokens, err := e.lexer.Tokenize(input)
 	if err != nil {
-		return err
+		return e.wrapFileErr(err)
 	}
 	ast, err := e.parser.Parse(tokens)
 	if err != nil {
-		return err
+		return e.wrapFileErr(err)
 	}
 	for _, expr := range ast {
 		_, err := e.Eval(expr)
@@ -97,6 +120,21 @@ func (e *Eval) Eval(expr Value) (Value, error) {
 	return e.eval(expr, e.env)
 }
 
+func (e *Eval) errAt(v Value, format string, args ...interface{}) error {
+	line := 0
+	switch val := v.(type) {
+	case *Cons:
+		line = val.Line
+	case *Sym:
+		line = val.Line
+	}
+	return &ErrRuntime{
+		File: e.currentFile,
+		Line: line,
+		Msg:  fmt.Sprintf(format, args...),
+	}
+}
+
 func (e *Eval) eval(expr Value, env *Env) (Value, error) {
 	switch val := expr.(type) {
 	case *NilType, Integer, Float, String, Boolean, *Vector, *ClassType, *Instance:
@@ -104,12 +142,16 @@ func (e *Eval) eval(expr Value, env *Env) (Value, error) {
 	}
 
 	if sym, ok := expr.(*Sym); ok {
-		return env.Get(sym.Name)
+		val, err := env.Get(sym.Name)
+		if err != nil {
+			return nil, e.errAt(sym, "%v", err)
+		}
+		return val, nil
 	}
 
 	cons, ok := expr.(*Cons)
 	if !ok {
-		return Nil, fmt.Errorf("cannot evaluate: %v", expr)
+		return Nil, e.errAt(expr, "cannot evaluate: %v", expr)
 	}
 
 	if cons.Car == Nil {
@@ -186,7 +228,7 @@ func (e *Eval) evalDefine(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	firstCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("define requires at least 2 arguments")
+		return nil, e.errAt(expr, "define requires at least 2 arguments")
 	}
 
 	first := firstCons.Car
@@ -208,12 +250,12 @@ func (e *Eval) evalDefine(expr *Cons, env *Env) (Value, error) {
 
 	listCons, ok := first.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("invalid define syntax")
+		return nil, e.errAt(expr, "invalid define syntax")
 	}
 
 	fnSym, ok := listCons.Car.(*Sym)
 	if !ok {
-		return nil, fmt.Errorf("define: function name must be a symbol")
+		return nil, e.errAt(first, "define: function name must be a symbol")
 	}
 
 	var params []*Sym
@@ -226,7 +268,7 @@ func (e *Eval) evalDefine(expr *Cons, env *Env) (Value, error) {
 		}
 		psym, ok := pc.Car.(*Sym)
 		if !ok {
-			return nil, fmt.Errorf("define: function parameters must be symbols")
+			return nil, e.errAt(pc.Car, "define: function parameters must be symbols")
 		}
 		if psym.Name == "&rest" {
 			hasRest = true
@@ -259,17 +301,17 @@ func (e *Eval) evalSet(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	firstCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("set! requires 2 arguments")
+		return nil, e.errAt(expr, "set! requires 2 arguments")
 	}
 
 	sym, ok := firstCons.Car.(*Sym)
 	if !ok {
-		return nil, fmt.Errorf("set!: first argument must be a symbol")
+		return nil, e.errAt(firstCons.Car, "set!: first argument must be a symbol")
 	}
 
 	valCons, ok := firstCons.Cdr.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("set! requires 2 arguments")
+		return nil, e.errAt(expr, "set! requires 2 arguments")
 	}
 
 	val, err := e.eval(valCons.Car, env)
@@ -288,7 +330,7 @@ func (e *Eval) evalIf(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	condCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("if requires at least 2 arguments")
+		return nil, e.errAt(expr, "if requires at least 2 arguments")
 	}
 
 	condition, err := e.eval(condCons.Car, env)
@@ -324,7 +366,7 @@ func (e *Eval) evalCond(expr *Cons, env *Env) (Value, error) {
 		}
 		clause, ok := clauseCons.Car.(*Cons)
 		if !ok {
-			return nil, fmt.Errorf("bad cond clause")
+			return nil, e.errAt(clauseCons.Car, "bad cond clause")
 		}
 		clauseRest := clauseCons.Cdr
 
@@ -366,7 +408,7 @@ func (e *Eval) evalLambda(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	paramsCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("lambda requires parameter list")
+		return nil, e.errAt(expr, "lambda requires parameter list")
 	}
 
 	paramsList := paramsCons.Car
@@ -374,7 +416,7 @@ func (e *Eval) evalLambda(expr *Cons, env *Env) (Value, error) {
 
 	if paramsList != Nil {
 		if _, ok := paramsList.(*Cons); !ok {
-			return nil, fmt.Errorf("lambda: parameter list must be a list")
+			return nil, e.errAt(paramsList, "lambda: parameter list must be a list")
 		}
 	}
 
@@ -385,7 +427,7 @@ func (e *Eval) evalLambda(expr *Cons, env *Env) (Value, error) {
 			pc := p.(*Cons)
 			psym, ok := pc.Car.(*Sym)
 			if !ok {
-				return nil, fmt.Errorf("lambda: parameters must be symbols")
+				return nil, e.errAt(pc.Car, "lambda: parameters must be symbols")
 			}
 			if psym.Name == "&rest" {
 				hasRest = true
@@ -405,7 +447,7 @@ func (e *Eval) evalLambda(expr *Cons, env *Env) (Value, error) {
 	}
 
 	if len(body) == 0 {
-		return nil, fmt.Errorf("lambda requires at least one body expression")
+		return nil, e.errAt(expr, "lambda requires at least one body expression")
 	}
 
 	return &Closure{
@@ -438,7 +480,7 @@ func (e *Eval) evalWhile(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	condCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("while requires a condition")
+		return nil, e.errAt(expr, "while requires a condition")
 	}
 	condition := condCons.Car
 	bodyList := condCons.Cdr
@@ -467,16 +509,16 @@ func (e *Eval) evalFor(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	varCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("for requires a variable")
+		return nil, e.errAt(expr, "for requires a variable")
 	}
 	varSym, ok := varCons.Car.(*Sym)
 	if !ok {
-		return nil, fmt.Errorf("for: first argument must be a symbol")
+		return nil, e.errAt(varCons.Car, "for: first argument must be a symbol")
 	}
 
 	startCons, ok := varCons.Cdr.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("for requires start value")
+		return nil, e.errAt(expr, "for requires start value")
 	}
 	start, err := e.eval(startCons.Car, env)
 	if err != nil {
@@ -484,12 +526,12 @@ func (e *Eval) evalFor(expr *Cons, env *Env) (Value, error) {
 	}
 	startInt, ok := start.(Integer)
 	if !ok {
-		return nil, fmt.Errorf("for: start must be an integer")
+		return nil, e.errAt(expr, "for: start must be an integer")
 	}
 
 	endCons, ok := startCons.Cdr.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("for requires end value")
+		return nil, e.errAt(expr, "for requires end value")
 	}
 	end, err := e.eval(endCons.Car, env)
 	if err != nil {
@@ -497,7 +539,7 @@ func (e *Eval) evalFor(expr *Cons, env *Env) (Value, error) {
 	}
 	endInt, ok := end.(Integer)
 	if !ok {
-		return nil, fmt.Errorf("for: end must be an integer")
+		return nil, e.errAt(expr, "for: end must be an integer")
 	}
 
 	bodyList := endCons.Cdr
@@ -563,11 +605,11 @@ func (e *Eval) evalRequire(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	fileCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("require: filename required")
+		return nil, e.errAt(expr, "require: filename required")
 	}
 	filename, ok := fileCons.Car.(String)
 	if !ok {
-		return nil, fmt.Errorf("require: filename must be a string")
+		return nil, e.errAt(fileCons.Car, "require: filename must be a string")
 	}
 
 	var source string
@@ -579,18 +621,22 @@ func (e *Eval) evalRequire(expr *Cons, env *Env) (Value, error) {
 	if source == "" {
 		data, err := os.ReadFile(string(filename))
 		if err != nil {
-			return nil, fmt.Errorf("cannot find file: %s", filename)
+			return nil, e.errAt(expr, "cannot find file: %s", filename)
 		}
 		source = string(data)
 	}
 
+	savedFile := e.currentFile
+	e.currentFile = string(filename)
+	defer func() { e.currentFile = savedFile }()
+
 	tokens, err := e.lexer.Tokenize(source)
 	if err != nil {
-		return nil, err
+		return nil, e.wrapFileErr(err)
 	}
 	ast, err := e.parser.Parse(tokens)
 	if err != nil {
-		return nil, err
+		return nil, e.wrapFileErr(err)
 	}
 	var result Value = Nil
 	for _, expr := range ast {
@@ -618,6 +664,9 @@ func (e *Eval) evalCall(expr *Cons, env *Env) (Value, error) {
 		}
 		result, err := e.applyMacro(m, rawArgs)
 		if err != nil {
+			if _, ok := err.(*ErrRuntime); !ok {
+				return nil, e.errAt(expr, "%v", err)
+			}
 			return nil, err
 		}
 		return e.eval(result, env)
@@ -638,7 +687,14 @@ func (e *Eval) evalCall(expr *Cons, env *Env) (Value, error) {
 		argList = ac.Cdr
 	}
 
-	return e.Apply(fn, args)
+	result, err := e.Apply(fn, args)
+	if err != nil {
+		if _, ok := err.(*ErrRuntime); !ok {
+			return nil, e.errAt(expr, "%v", err)
+		}
+		return nil, err
+	}
+	return result, nil
 }
 
 func (e *Eval) Apply(fn Value, args []Value) (Value, error) {
@@ -729,19 +785,19 @@ func (e *Eval) evalDefineMacro(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	firstCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("define-macro requires at least 2 arguments")
+		return nil, e.errAt(expr, "define-macro requires at least 2 arguments")
 	}
 	first := firstCons.Car
 	rest := firstCons.Cdr
 
 	listCons, ok := first.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("define-macro: (name params) list expected")
+		return nil, e.errAt(first, "define-macro: (name params) list expected")
 	}
 
 	fnSym, ok := listCons.Car.(*Sym)
 	if !ok {
-		return nil, fmt.Errorf("define-macro: macro name must be a symbol")
+		return nil, e.errAt(listCons.Car, "define-macro: macro name must be a symbol")
 	}
 
 	var params []*Sym
@@ -751,7 +807,7 @@ func (e *Eval) evalDefineMacro(expr *Cons, env *Env) (Value, error) {
 		pc := paramList.(*Cons)
 		psym, ok := pc.Car.(*Sym)
 		if !ok {
-			return nil, fmt.Errorf("define-macro: parameters must be symbols")
+			return nil, e.errAt(pc.Car, "define-macro: parameters must be symbols")
 		}
 		if psym.Name == "&rest" {
 			hasRest = true
@@ -768,7 +824,7 @@ func (e *Eval) evalDefineMacro(expr *Cons, env *Env) (Value, error) {
 	}
 
 	if len(body) == 0 {
-		return nil, fmt.Errorf("define-macro requires at least one body expression")
+		return nil, e.errAt(expr, "define-macro requires at least one body expression")
 	}
 
 	m := &Macro{Env: env, Params: params, Body: body, HasRest: hasRest}
@@ -823,7 +879,7 @@ func (e *Eval) applyMacro(m *Macro, rawArgs []Value) (Value, error) {
 func (e *Eval) evalFuture(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	if args == Nil {
-		return nil, fmt.Errorf("future requires at least one body expression")
+		return nil, e.errAt(expr, "future requires at least one body expression")
 	}
 
 	f := NewFuture()
@@ -854,7 +910,7 @@ func (e *Eval) evalAwait(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	argCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("await requires 1 argument")
+		return nil, e.errAt(expr, "await requires 1 argument")
 	}
 
 	val, err := e.eval(argCons.Car, env)
@@ -864,7 +920,7 @@ func (e *Eval) evalAwait(expr *Cons, env *Env) (Value, error) {
 
 	f, ok := val.(*Future)
 	if !ok {
-		return nil, fmt.Errorf("await: argument must be a future")
+		return nil, e.errAt(argCons.Car, "await: argument must be a future")
 	}
 
 	return f.Await()
@@ -874,7 +930,7 @@ func (e *Eval) evalCo(expr *Cons, env *Env) (Value, error) {
 	args := expr.Cdr
 	paramsCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("co requires parameter list")
+		return nil, e.errAt(expr, "co requires parameter list")
 	}
 
 	paramsList := paramsCons.Car
@@ -882,7 +938,7 @@ func (e *Eval) evalCo(expr *Cons, env *Env) (Value, error) {
 
 	if paramsList != Nil {
 		if _, ok := paramsList.(*Cons); !ok {
-			return nil, fmt.Errorf("co: parameter list must be a list")
+			return nil, e.errAt(paramsList, "co: parameter list must be a list")
 		}
 	}
 
@@ -893,7 +949,7 @@ func (e *Eval) evalCo(expr *Cons, env *Env) (Value, error) {
 			pc := p.(*Cons)
 			psym, ok := pc.Car.(*Sym)
 			if !ok {
-				return nil, fmt.Errorf("co: parameters must be symbols")
+				return nil, e.errAt(pc.Car, "co: parameters must be symbols")
 			}
 			if psym.Name == "&rest" {
 				hasRest = true
@@ -913,7 +969,7 @@ func (e *Eval) evalCo(expr *Cons, env *Env) (Value, error) {
 	}
 
 	if len(body) == 0 {
-		return nil, fmt.Errorf("co requires at least one body expression")
+		return nil, e.errAt(expr, "co requires at least one body expression")
 	}
 
 	return &Closure{
@@ -1043,6 +1099,9 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("usleep", &Primitive{Name: "usleep", Fn: e.builtinUsleep})
 	e.env.Set("exit", &Primitive{Name: "exit", Fn: e.builtinExit})
 	e.env.Set("get-file-dir", &Primitive{Name: "get-file-dir", Fn: e.builtinGetFileDir})
+
+	e.env.Set("json/encode", &Primitive{Name: "json/encode", Fn: e.builtinJsonEncode})
+	e.env.Set("json/decode", &Primitive{Name: "json/decode", Fn: e.builtinJsonDecode})
 
 	// OOP
 	e.env.Set("make-class", &Primitive{Name: "make-class", Fn: e.builtinMakeClass})

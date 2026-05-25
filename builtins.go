@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -2054,4 +2056,198 @@ func (e *Eval) builtinShellToString(args []Value) (Value, error) {
 		return String(""), nil
 	}
 	return String(string(out)), nil
+}
+
+func (e *Eval) builtinJsonEncode(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("json/encode requires 1 argument")
+	}
+	s, err := jsonEncodeValue(args[0])
+	if err != nil {
+		return nil, err
+	}
+	return String(s), nil
+}
+
+func (e *Eval) builtinJsonDecode(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("json/decode requires 1 argument")
+	}
+	s, ok := args[0].(String)
+	if !ok {
+		return nil, fmt.Errorf("json/decode: argument must be a string")
+	}
+	return jsonDecodeValue(string(s))
+}
+
+func jsonEncodeValue(v Value) (string, error) {
+	switch val := v.(type) {
+	case *NilType:
+		return "null", nil
+	case Integer:
+		return fmt.Sprintf("%d", int64(val)), nil
+	case Float:
+		return fmt.Sprintf("%g", float64(val)), nil
+	case String:
+		b, _ := json.Marshal(string(val))
+		return string(b), nil
+	case Boolean:
+		if val {
+			return "true", nil
+		}
+		return "false", nil
+	case *Vector:
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, item := range val.Items {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			s, err := jsonEncodeValue(item)
+			if err != nil {
+				return "", err
+			}
+			b.WriteString(s)
+		}
+		b.WriteByte(']')
+		return b.String(), nil
+	case *Cons:
+		if isAlist(val) {
+			return jsonEncodeAlist(val)
+		}
+		return jsonEncodeList(val)
+	default:
+		return "", fmt.Errorf("json/encode: unsupported type %T", v)
+	}
+}
+
+func isAlist(v Value) bool {
+	for v != Nil {
+		cons, ok := v.(*Cons)
+		if !ok {
+			return false
+		}
+		pair, ok := cons.Car.(*Cons)
+		if !ok {
+			return false
+		}
+		if _, ok := pair.Car.(String); !ok {
+			return false
+		}
+		v = cons.Cdr
+	}
+	return true
+}
+
+func jsonEncodeAlist(v Value) (string, error) {
+	var b strings.Builder
+	b.WriteByte('{')
+	first := true
+	for v != Nil {
+		cons := v.(*Cons)
+		pair := cons.Car.(*Cons)
+		key := string(pair.Car.(String))
+		if !first {
+			b.WriteByte(',')
+		}
+		keyJSON, _ := json.Marshal(key)
+		b.WriteString(string(keyJSON))
+		b.WriteByte(':')
+		valStr, err := jsonEncodeValue(pair.Cdr)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(valStr)
+		first = false
+		v = cons.Cdr
+	}
+	b.WriteByte('}')
+	return b.String(), nil
+}
+
+func jsonEncodeList(v Value) (string, error) {
+	var b strings.Builder
+	b.WriteByte('[')
+	first := true
+	for v != Nil {
+		cons := v.(*Cons)
+		if !first {
+			b.WriteByte(',')
+		}
+		s, err := jsonEncodeValue(cons.Car)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(s)
+		first = false
+		v = cons.Cdr
+	}
+	// check for improper list
+	if v != Nil {
+		return "", fmt.Errorf("json/encode: improper list")
+	}
+	b.WriteByte(']')
+	return b.String(), nil
+}
+
+func jsonDecodeValue(input string) (Value, error) {
+	var raw interface{}
+	if err := json.Unmarshal([]byte(input), &raw); err != nil {
+		return nil, fmt.Errorf("json/decode: %v", err)
+	}
+	return jsonDecodeAny(raw)
+}
+
+func jsonDecodeAny(v interface{}) (Value, error) {
+	switch val := v.(type) {
+	case nil:
+		return Nil, nil
+	case float64:
+		if val == float64(int64(val)) {
+			return Integer(int64(val)), nil
+		}
+		return Float(val), nil
+	case string:
+		return String(val), nil
+	case bool:
+		return Boolean(val), nil
+	case []interface{}:
+		items := make([]Value, len(val))
+		for i, item := range val {
+			var err error
+			items[i], err = jsonDecodeAny(item)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return &Vector{Items: items}, nil
+	case map[string]interface{}:
+		return jsonDecodeMap(val)
+	default:
+		return nil, fmt.Errorf("json/decode: unexpected type %T", v)
+	}
+}
+
+func jsonDecodeMap(m map[string]interface{}) (Value, error) {
+	// sort keys for deterministic output
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var result Value = Nil
+	for i := len(keys) - 1; i >= 0; i-- {
+		k := keys[i]
+		v := m[k]
+		val, err := jsonDecodeAny(v)
+		if err != nil {
+			return nil, err
+		}
+		result = &Cons{
+			Car: &Cons{Car: String(k), Cdr: val},
+			Cdr: result,
+		}
+	}
+	return result, nil
 }

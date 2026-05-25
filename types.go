@@ -44,14 +44,16 @@ func (b Boolean) String() string {
 
 type Sym struct {
 	Name string
+	Line int
 }
 
 func (*Sym) isValue()         {}
 func (s *Sym) String() string { return s.Name }
 
 type Cons struct {
-	Car Value
-	Cdr Value
+	Car  Value
+	Cdr  Value
+	Line int
 }
 
 func (*Cons) isValue() {}
@@ -203,6 +205,22 @@ type ReturnSignal struct {
 func (r *ReturnSignal) Error() string  { return "<return>" }
 func (*ReturnSignal) isValue()         {}
 func (r *ReturnSignal) String() string { return r.Value.String() }
+
+type ErrRuntime struct {
+	File string
+	Line int
+	Msg  string
+}
+
+func (e *ErrRuntime) Error() string {
+	if e.File != "" && e.Line > 0 {
+		return fmt.Sprintf("%s:%d: %s", e.File, e.Line, e.Msg)
+	}
+	if e.Line > 0 {
+		return fmt.Sprintf("line %d: %s", e.Line, e.Msg)
+	}
+	return e.Msg
+}
 
 type HttpServer struct {
 	Host    string

@@ -22,18 +22,21 @@ const (
 type Token struct {
 	Type  TokenType
 	Value Value
+	Line  int
 }
 
 type Lexer struct {
 	input []rune
 	pos   int
 	len   int
+	line  int
 }
 
 func (l *Lexer) Tokenize(input string) ([]Token, error) {
 	l.input = []rune(input)
 	l.pos = 0
 	l.len = len(l.input)
+	l.line = 1
 	var tokens []Token
 
 	// skip shebang (#!) on first line
@@ -43,6 +46,7 @@ func (l *Lexer) Tokenize(input string) ([]Token, error) {
 		}
 		if l.pos < l.len {
 			l.pos++ // skip the \n
+			l.line++
 		}
 	}
 
@@ -53,23 +57,30 @@ func (l *Lexer) Tokenize(input string) ([]Token, error) {
 			for l.pos < l.len && l.input[l.pos] != '\n' {
 				l.pos++
 			}
+			if l.pos < l.len {
+				l.pos++
+				l.line++
+			}
 			continue
 		}
 
 		if unicode.IsSpace(ch) {
+			if ch == '\n' {
+				l.line++
+			}
 			l.pos++
 			continue
 		}
 
 		switch ch {
 		case '(':
-			tokens = append(tokens, Token{Type: TkLParen})
+			tokens = append(tokens, Token{Type: TkLParen, Line: l.line})
 			l.pos++
 		case ')':
-			tokens = append(tokens, Token{Type: TkRParen})
+			tokens = append(tokens, Token{Type: TkRParen, Line: l.line})
 			l.pos++
 		case '\'':
-			tokens = append(tokens, Token{Type: TkQuote})
+			tokens = append(tokens, Token{Type: TkQuote, Line: l.line})
 			l.pos++
 		case '"':
 			tok, err := l.readString()
@@ -81,17 +92,17 @@ func (l *Lexer) Tokenize(input string) ([]Token, error) {
 			if l.pos+1 < l.len {
 				next := l.input[l.pos+1]
 				if next == 't' {
-					tokens = append(tokens, Token{Type: TkBoolean, Value: Boolean(true)})
+					tokens = append(tokens, Token{Type: TkBoolean, Value: Boolean(true), Line: l.line})
 					l.pos += 2
 					continue
 				}
 				if next == 'f' {
-					tokens = append(tokens, Token{Type: TkBoolean, Value: Boolean(false)})
+					tokens = append(tokens, Token{Type: TkBoolean, Value: Boolean(false), Line: l.line})
 					l.pos += 2
 					continue
 				}
 				if next == '(' {
-					tokens = append(tokens, Token{Type: TkVectorStart})
+					tokens = append(tokens, Token{Type: TkVectorStart, Line: l.line})
 					l.pos += 2
 					continue
 				}
@@ -114,13 +125,14 @@ func (l *Lexer) Tokenize(input string) ([]Token, error) {
 }
 
 func (l *Lexer) readString() (Token, error) {
+	startLine := l.line
 	l.pos++
 	var b strings.Builder
 	for l.pos < l.len {
 		ch := l.input[l.pos]
 		if ch == '"' {
 			l.pos++
-			return Token{Type: TkString, Value: String(b.String())}, nil
+			return Token{Type: TkString, Value: String(b.String()), Line: startLine}, nil
 		}
 		if ch == '\\' && l.pos+1 < l.len {
 			l.pos++
@@ -141,14 +153,18 @@ func (l *Lexer) readString() (Token, error) {
 			}
 		} else {
 			b.WriteRune(ch)
+			if ch == '\n' {
+				l.line++
+			}
 		}
 		l.pos++
 	}
-	return Token{}, fmt.Errorf("unterminated string")
+	return Token{}, fmt.Errorf("line %d: unterminated string", startLine)
 }
 
 func (l *Lexer) readAtom() (Token, error) {
 	start := l.pos
+	startLine := l.line
 	for l.pos < l.len {
 		ch := l.input[l.pos]
 		if unicode.IsSpace(ch) || ch == '(' || ch == ')' || ch == '"' || ch == '\'' || ch == ';' {
@@ -163,14 +179,14 @@ func (l *Lexer) readAtom() (Token, error) {
 		if strings.Contains(atom, ".") {
 			var f float64
 			fmt.Sscanf(atom, "%f", &f)
-			return Token{Type: TkNumber, Value: Float(f)}, nil
+			return Token{Type: TkNumber, Value: Float(f), Line: startLine}, nil
 		}
 		var n int64
 		fmt.Sscanf(atom, "%d", &n)
-		return Token{Type: TkNumber, Value: Integer(n)}, nil
+		return Token{Type: TkNumber, Value: Integer(n), Line: startLine}, nil
 	}
 
-	return Token{Type: TkSymbol, Value: &Sym{Name: atom}}, nil
+	return Token{Type: TkSymbol, Value: &Sym{Name: atom, Line: startLine}, Line: startLine}, nil
 }
 
 func isNumeric(s string) bool {
