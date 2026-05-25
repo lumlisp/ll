@@ -45,3 +45,35 @@
 
 (add-module-path "/etc/ll/modules")
 (add-module-path "ll_modules")
+
+;; --- OOP ---
+
+(define (_process-slot slot)
+  (if (null? (cdr slot))
+      (list (car slot) ())
+      (list (car slot) (car (cdr slot)))))
+
+(define (_process-slots slots)
+  (if (null? slots)
+      ()
+      (cons (_process-slot (car slots))
+            (_process-slots (cdr slots)))))
+
+(define-macro (defclass name parent slots)
+  (list 'define name
+    (list 'make-class (list 'quote name)
+      (if (null? parent) () (car parent))
+      (list 'quote (_process-slots slots)))))
+
+(define-macro (defmethod class name params &rest body)
+  (list 'add-method class (list 'quote name)
+    (cons 'lambda (cons params body))))
+
+(define-macro (. obj method &rest args)
+  (cons 'send (cons obj (cons (list 'quote method) args))))
+
+(define-macro ($ slot-name)
+  (list 'slot-ref 'self (list 'quote slot-name)))
+
+(define-macro ($= slot-name value)
+  (list 'slot-set! 'self (list 'quote slot-name) value))

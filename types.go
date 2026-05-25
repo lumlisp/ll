@@ -173,6 +173,29 @@ func ListToSlice(v Value) ([]Value, bool) {
 	return result, true
 }
 
+type SlotDef struct {
+	Name    string
+	Default Value
+}
+
+type ClassType struct {
+	Name    string
+	Parent  *ClassType
+	Slots   []*SlotDef
+	Methods map[string]*Closure
+}
+
+func (*ClassType) isValue()         {}
+func (c *ClassType) String() string { return fmt.Sprintf("#<class:%s>", c.Name) }
+
+type Instance struct {
+	Class *ClassType
+	Data  []Value
+}
+
+func (*Instance) isValue()         {}
+func (i *Instance) String() string { return fmt.Sprintf("#<instance:%s>", i.Class.Name) }
+
 type ReturnSignal struct {
 	Value Value
 }

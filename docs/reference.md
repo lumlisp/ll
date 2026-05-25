@@ -354,6 +354,50 @@ Module resolution order for each path:
 | `(file-exists? path)` | `#t` if file exists |
 | `(delete-file path)` | Remove file |
 
+### Object-Oriented Programming
+| Function | Description |
+|----------|-------------|
+| `(make-class name parent slots-defs)` | Create a class (raw builtin) |
+| `(new class key val ...)` | Create instance with slot values |
+| `(send obj method-name args...)` | Call method on instance |
+| `(slot-ref obj slot-name)` | Read slot value |
+| `(slot-set! obj slot-name val)` | Write slot value |
+| `(instance? x)` | `#t` if Instance |
+| `(class-of x)` | Return instance's class |
+| `(add-method class name fn)` | Add method to class |
+
+### Macros (convenience layer)
+
+| Macro | Description |
+|-------|-------------|
+| `(defclass Name (Parent) ((slot default)...))` | Define class with optional inheritance |
+| `(defmethod Class method-name (self ...) body...)` | Define method (first param is `self`) |
+| `(. obj method args...)` | Method call syntax sugar |
+| `($ slot-name)` | Slot access inside methods (uses `self`) |
+| `($= slot-name value)` | Slot mutation inside methods |
+
+```scheme
+;; --- Example ---
+
+(defclass Animal () ((name "unknown") (age 0)))
+
+(defmethod Animal speak (self)
+  (println ($ name) "says hello"))
+
+(define a (new Animal 'name "Rex"))
+(. a speak)                       ; => Rex says hello
+
+;; Inheritance
+(defclass Dog (Animal) ((breed "mixed")))
+
+(defmethod Dog speak (self)
+  (println ($ name) "barks! Breed:" ($ breed)))
+
+(define d (new Dog 'name "Max" 'breed "Husky"))
+(. d speak)                       ; => Max barks! Breed: Husky
+(. d make-older 2)                ; inherited method
+```
+
 ### System
 | Function | Description |
 |----------|-------------|

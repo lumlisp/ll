@@ -66,6 +66,7 @@ check_file "fib.ll"       "$ROOT/examples/fib.ll"       "$LL" "$ROOT/examples/fi
 check_file "fizzbuzz.ll"  "$ROOT/examples/fizzbuzz.ll"  "$LL" "$ROOT/examples/fizzbuzz.ll"
 check_file "php-interop.ll" "$ROOT/examples/php-interop.ll" "$LL" "$ROOT/examples/php-interop.ll"
 check_file "async.ll"     "$ROOT/examples/async.ll"     "$LL" "$ROOT/examples/async.ll"
+check_file "oop.ll"       "$ROOT/examples/oop.ll"       "$LL" "$ROOT/examples/oop.ll"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

@@ -184,6 +184,10 @@ func isNumeric(s string) bool {
 		}
 		start = 1
 	}
+	// A bare "." or "+." or "-." is not a number
+	if s[start] == '.' && len(s)-start == 1 {
+		return false
+	}
 	hasDot := false
 	for i := start; i < len(s); i++ {
 		if s[i] == '.' {

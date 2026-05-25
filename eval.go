@@ -99,7 +99,7 @@ func (e *Eval) Eval(expr Value) (Value, error) {
 
 func (e *Eval) eval(expr Value, env *Env) (Value, error) {
 	switch val := expr.(type) {
-	case *NilType, Integer, Float, String, Boolean, *Vector:
+	case *NilType, Integer, Float, String, Boolean, *Vector, *ClassType, *Instance:
 		return val, nil
 	}
 
@@ -1043,4 +1043,14 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("usleep", &Primitive{Name: "usleep", Fn: e.builtinUsleep})
 	e.env.Set("exit", &Primitive{Name: "exit", Fn: e.builtinExit})
 	e.env.Set("get-file-dir", &Primitive{Name: "get-file-dir", Fn: e.builtinGetFileDir})
+
+	// OOP
+	e.env.Set("make-class", &Primitive{Name: "make-class", Fn: e.builtinMakeClass})
+	e.env.Set("new", &Primitive{Name: "new", Fn: e.builtinNew})
+	e.env.Set("send", &Primitive{Name: "send", Fn: e.builtinSend})
+	e.env.Set("slot-ref", &Primitive{Name: "slot-ref", Fn: e.builtinSlotRef})
+	e.env.Set("slot-set!", &Primitive{Name: "slot-set!", Fn: e.builtinSlotSet})
+	e.env.Set("instance?", &Primitive{Name: "instance?", Fn: e.builtinInstanceOf})
+	e.env.Set("class-of", &Primitive{Name: "class-of", Fn: e.builtinClassOf})
+	e.env.Set("add-method", &Primitive{Name: "add-method", Fn: e.builtinAddMethod})
 }

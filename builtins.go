@@ -1561,6 +1561,227 @@ func (e *Eval) builtinVectorMap(args []Value) (Value, error) {
 	return &Vector{Items: result}, nil
 }
 
+// --- OOP ---
+
+func (e *Eval) builtinMakeClass(args []Value) (Value, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("make-class requires at least 2 arguments")
+	}
+	nameSym, ok := args[0].(*Sym)
+	if !ok {
+		return nil, fmt.Errorf("make-class: first argument must be a symbol")
+	}
+
+	var parent *ClassType
+	if args[1] != Nil {
+		p, ok := args[1].(*ClassType)
+		if !ok {
+			return nil, fmt.Errorf("make-class: parent must be a class or nil")
+		}
+		parent = p
+	}
+
+	var slotDefs []*SlotDef
+	if len(args) >= 3 && args[2] != Nil {
+		slotsList, ok := args[2].(*Cons)
+		if !ok {
+			return nil, fmt.Errorf("make-class: slot definitions must be a list")
+		}
+		slotItems, ok := ListToSlice(slotsList)
+		if !ok {
+			return nil, fmt.Errorf("make-class: invalid slot definitions list")
+		}
+		for _, item := range slotItems {
+			defCons, ok := item.(*Cons)
+			if !ok {
+				return nil, fmt.Errorf("make-class: each slot def must be a list (name . defaults)")
+			}
+			defSlice, ok := ListToSlice(defCons)
+			if !ok {
+				return nil, fmt.Errorf("make-class: invalid slot definition")
+			}
+			if len(defSlice) < 1 {
+				return nil, fmt.Errorf("make-class: slot definition needs at least a name")
+			}
+			nameSym, ok := defSlice[0].(*Sym)
+			if !ok {
+				return nil, fmt.Errorf("make-class: slot name must be a symbol")
+			}
+			sd := &SlotDef{Name: nameSym.Name, Default: Nil}
+			if len(defSlice) >= 2 {
+				sd.Default = defSlice[1]
+			}
+			slotDefs = append(slotDefs, sd)
+		}
+	}
+
+	// Compute full slot list: parent slots first, then own
+	var allSlots []*SlotDef
+	if parent != nil {
+		allSlots = append(allSlots, parent.Slots...)
+	}
+	allSlots = append(allSlots, slotDefs...)
+
+	class := &ClassType{
+		Name:    nameSym.Name,
+		Parent:  parent,
+		Slots:   allSlots,
+		Methods: make(map[string]*Closure),
+	}
+	return class, nil
+}
+
+func lookupMethod(class *ClassType, name string) *Closure {
+	for c := class; c != nil; c = c.Parent {
+		if m, ok := c.Methods[name]; ok {
+			return m
+		}
+	}
+	return nil
+}
+
+func (e *Eval) builtinNew(args []Value) (Value, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("new requires at least 1 argument (a class)")
+	}
+	class, ok := args[0].(*ClassType)
+	if !ok {
+		return nil, fmt.Errorf("new: first argument must be a class")
+	}
+
+	// Build slot values: default all, then override with keyword args
+	data := make([]Value, len(class.Slots))
+	for i, sd := range class.Slots {
+		data[i] = sd.Default
+	}
+
+	// Process keyword args: (new Dog 'name "Rex" 'breed "Husky")
+	for i := 1; i+1 < len(args); i += 2 {
+		keySym, ok := args[i].(*Sym)
+		if !ok {
+			return nil, fmt.Errorf("new: slot keys must be symbols")
+		}
+		found := false
+		for j, sd := range class.Slots {
+			if sd.Name == keySym.Name {
+				data[j] = args[i+1]
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("new: unknown slot '%s' for class %s", keySym.Name, class.Name)
+		}
+	}
+
+	inst := &Instance{
+		Class: class,
+		Data:  data,
+	}
+	return inst, nil
+}
+
+func (e *Eval) builtinSend(args []Value) (Value, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("send requires at least 2 arguments (instance method-name)")
+	}
+	inst, ok := args[0].(*Instance)
+	if !ok {
+		return nil, fmt.Errorf("send: first argument must be an instance")
+	}
+	methodSym, ok := args[1].(*Sym)
+	if !ok {
+		return nil, fmt.Errorf("send: method name must be a symbol")
+	}
+	method := lookupMethod(inst.Class, methodSym.Name)
+	if method == nil {
+		return nil, fmt.Errorf("send: no method '%s' on %s", methodSym.Name, inst.Class.Name)
+	}
+	callArgs := []Value{inst}
+	callArgs = append(callArgs, args[2:]...)
+	return e.Apply(method, callArgs)
+}
+
+func (e *Eval) builtinSlotRef(args []Value) (Value, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("slot-ref requires 2 arguments")
+	}
+	inst, ok := args[0].(*Instance)
+	if !ok {
+		return nil, fmt.Errorf("slot-ref: first argument must be an instance")
+	}
+	nameSym, ok := args[1].(*Sym)
+	if !ok {
+		return nil, fmt.Errorf("slot-ref: second argument must be a symbol")
+	}
+	for i, sd := range inst.Class.Slots {
+		if sd.Name == nameSym.Name {
+			return inst.Data[i], nil
+		}
+	}
+	return nil, fmt.Errorf("slot-ref: no slot '%s' on %s", nameSym.Name, inst.Class.Name)
+}
+
+func (e *Eval) builtinSlotSet(args []Value) (Value, error) {
+	if len(args) != 3 {
+		return nil, fmt.Errorf("slot-set! requires 3 arguments")
+	}
+	inst, ok := args[0].(*Instance)
+	if !ok {
+		return nil, fmt.Errorf("slot-set!: first argument must be an instance")
+	}
+	nameSym, ok := args[1].(*Sym)
+	if !ok {
+		return nil, fmt.Errorf("slot-set!: second argument must be a symbol")
+	}
+	for i, sd := range inst.Class.Slots {
+		if sd.Name == nameSym.Name {
+			inst.Data[i] = args[2]
+			return args[2], nil
+		}
+	}
+	return nil, fmt.Errorf("slot-set!: no slot '%s' on %s", nameSym.Name, inst.Class.Name)
+}
+
+func (e *Eval) builtinInstanceOf(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("instance? requires 1 argument")
+	}
+	_, ok := args[0].(*Instance)
+	return Boolean(ok), nil
+}
+
+func (e *Eval) builtinClassOf(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("class-of requires 1 argument")
+	}
+	inst, ok := args[0].(*Instance)
+	if !ok {
+		return nil, fmt.Errorf("class-of: argument must be an instance")
+	}
+	return inst.Class, nil
+}
+
+func (e *Eval) builtinAddMethod(args []Value) (Value, error) {
+	if len(args) != 3 {
+		return nil, fmt.Errorf("add-method requires 3 arguments (class name function)")
+	}
+	class, ok := args[0].(*ClassType)
+	if !ok {
+		return nil, fmt.Errorf("add-method: first argument must be a class")
+	}
+	methodSym, ok := args[1].(*Sym)
+	if !ok {
+		return nil, fmt.Errorf("add-method: second argument must be a symbol")
+	}
+	fn, ok := args[2].(*Closure)
+	if !ok {
+		return nil, fmt.Errorf("add-method: third argument must be a function")
+	}
+	class.Methods[methodSym.Name] = fn
+	return fn, nil
+}
+
 // --- System interface ---
 
 func (e *Eval) builtinSystem(args []Value) (Value, error) {

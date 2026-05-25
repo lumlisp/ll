@@ -495,3 +495,239 @@ func TestEvalParallelFutures(t *testing.T) {
 func cons(a, b Value) *Cons {
 	return &Cons{Car: a, Cdr: b}
 }
+
+// --- OOP tests ---
+
+func TestOopMakeClass(t *testing.T) {
+	e := NewEval()
+	v, err := e.Eval(parserExpr(t, `(make-class 'Animal () '((name "unknown") (age 0)))`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := v.(*ClassType)
+	if !ok {
+		t.Fatalf("expected ClassType, got %T", v)
+	}
+	if c.Name != "Animal" {
+		t.Fatalf("expected name Animal, got %s", c.Name)
+	}
+	if len(c.Slots) != 2 || c.Slots[0].Name != "name" || c.Slots[1].Name != "age" {
+		t.Fatalf("unexpected slots: %+v", c.Slots)
+	}
+}
+
+func TestOopMakeClassInherited(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown") (age 0))))`))
+	v, err := e.Eval(parserExpr(t, `(make-class 'Dog Animal '((breed "mixed")))`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := v.(*ClassType)
+	if !ok {
+		t.Fatalf("expected ClassType, got %T", v)
+	}
+	if c.Name != "Dog" {
+		t.Fatalf("expected name Dog, got %s", c.Name)
+	}
+	if len(c.Slots) != 3 {
+		t.Fatalf("expected 3 slots (2 inherited + 1 own), got %d", len(c.Slots))
+	}
+	if c.Slots[0].Name != "name" || c.Slots[1].Name != "age" || c.Slots[2].Name != "breed" {
+		t.Fatalf("unexpected slots: %+v", c.Slots)
+	}
+	if c.Parent == nil || c.Parent.Name != "Animal" {
+		t.Fatalf("parent should be Animal")
+	}
+}
+
+func TestOopNew(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown") (age 0))))`))
+	v, err := e.Eval(parserExpr(t, `(new Animal 'name "Rex" 'age 5)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, ok := v.(*Instance)
+	if !ok {
+		t.Fatalf("expected Instance, got %T", v)
+	}
+	if inst.Class.Name != "Animal" {
+		t.Fatalf("expected class Animal, got %s", inst.Class.Name)
+	}
+	if len(inst.Data) != 2 {
+		t.Fatalf("expected 2 slot values, got %d", len(inst.Data))
+	}
+	if inst.Data[0] != String("Rex") || inst.Data[1] != Integer(5) {
+		t.Fatalf("unexpected slot values: %v", inst.Data)
+	}
+}
+
+func TestOopNewDefaults(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown") (age 0))))`))
+	v, err := e.Eval(parserExpr(t, `(new Animal)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, ok := v.(*Instance)
+	if !ok {
+		t.Fatalf("expected Instance, got %T", v)
+	}
+	if inst.Data[0] != String("unknown") || inst.Data[1] != Integer(0) {
+		t.Fatalf("expected defaults, got %v", inst.Data)
+	}
+}
+
+func TestOopSlotRef(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown") (age 0))))`))
+	v, err := e.Eval(parserExpr(t, `(slot-ref (new Animal 'name "Rex") 'name)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != String("Rex") {
+		t.Fatalf("expected Rex, got %v", v)
+	}
+}
+
+func TestOopSlotSet(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown") (age 0))))`))
+	e.Eval(parserExpr(t, `(define a (new Animal 'name "Rex"))`))
+	_, err := e.Eval(parserExpr(t, `(slot-set! a 'name "Buddy")`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := e.Eval(parserExpr(t, `(slot-ref a 'name)`))
+	if v != String("Buddy") {
+		t.Fatalf("expected Buddy, got %v", v)
+	}
+}
+
+func TestOopInstanceOf(t *testing.T) {
+	v := evalOne(t, `(instance? 42)`)
+	if v != Boolean(false) {
+		t.Fatalf("expected #f, got %v", v)
+	}
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '()))`))
+	v, _ = e.Eval(parserExpr(t, `(instance? (new Animal))`))
+	if v != Boolean(true) {
+		t.Fatalf("expected #t, got %v", v)
+	}
+}
+
+func TestOopClassOf(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '()))`))
+	v, err := e.Eval(parserExpr(t, `(class-of (new Animal))`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := v.(*ClassType)
+	if !ok {
+		t.Fatalf("expected ClassType, got %T", v)
+	}
+	if c.Name != "Animal" {
+		t.Fatalf("expected Animal, got %s", c.Name)
+	}
+}
+
+func TestOopAddMethodAndSend(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown"))))`))
+	_, err := e.Eval(parserExpr(t, `(add-method Animal 'speak (lambda (self) (slot-ref self 'name)))`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := e.Eval(parserExpr(t, `(send (new Animal 'name "Rex") 'speak)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != String("Rex") {
+		t.Fatalf("expected Rex, got %v", v)
+	}
+}
+
+func TestOopInheritedMethod(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown"))))`))
+	e.Eval(parserExpr(t, `(add-method Animal 'speak (lambda (self) (slot-ref self 'name)))`))
+	e.Eval(parserExpr(t, `(define Dog (make-class 'Dog Animal '()))`))
+
+	v, err := e.Eval(parserExpr(t, `(send (new Dog 'name "Max") 'speak)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != String("Max") {
+		t.Fatalf("expected Max, got %v", v)
+	}
+}
+
+func TestOopMethodOverride(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown"))))`))
+	e.Eval(parserExpr(t, `(add-method Animal 'speak (lambda (self) "animal"))`))
+	e.Eval(parserExpr(t, `(define Dog (make-class 'Dog Animal '()))`))
+	e.Eval(parserExpr(t, `(add-method Dog 'speak (lambda (self) "dog"))`))
+
+	v, err := e.Eval(parserExpr(t, `(send (new Dog) 'speak)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != String("dog") {
+		t.Fatalf("expected dog, got %v", v)
+	}
+
+	// Parent method unchanged
+	v2, err := e.Eval(parserExpr(t, `(send (new Animal) 'speak)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2 != String("animal") {
+		t.Fatalf("expected animal, got %v", v2)
+	}
+}
+
+func TestOopSendWithArgs(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown"))))`))
+	e.Eval(parserExpr(t, `(add-method Animal 'greet (lambda (self other) (list (slot-ref self 'name) other)))`))
+
+	v, err := e.Eval(parserExpr(t, `(send (new Animal 'name "Alice") 'greet "Bob")`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sl, ok := ListToSlice(v)
+	if !ok || len(sl) != 2 || sl[0] != String("Alice") || sl[1] != String("Bob") {
+		t.Fatalf("expected (Alice Bob), got %v", v)
+	}
+}
+
+func TestOopNewInvalidSlot(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '((name "unknown"))))`))
+	_, err := e.Eval(parserExpr(t, `(new Animal 'nonexistent 42)`))
+	if err == nil {
+		t.Fatal("expected error for unknown slot")
+	}
+}
+
+func TestOopSendNoMethod(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '()))`))
+	_, err := e.Eval(parserExpr(t, `(send (new Animal) 'missing)`))
+	if err == nil {
+		t.Fatal("expected error for missing method")
+	}
+}
+
+func TestOopSlotRefInvalidSlot(t *testing.T) {
+	e := NewEval()
+	e.Eval(parserExpr(t, `(define Animal (make-class 'Animal () '()))`))
+	_, err := e.Eval(parserExpr(t, `(slot-ref (new Animal) 'missing)`))
+	if err == nil {
+		t.Fatal("expected error for missing slot")
+	}
+}

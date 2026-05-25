@@ -46,6 +46,7 @@ Full reference in [docs/reference.md](docs/reference.md). Highlights:
 | I/O | `display` `write` `print` `println` `newline` `read-line` |
 | File | `file->string` `string->file` `file-exists?` `delete-file` |
 | System | `system` `shell->string` `sleep` `usleep` `exit` `get-file-dir` |
+| OOP | `make-class` `new` `send` `slot-ref` `slot-set!` `instance?` `class-of` `add-method` |
 | Predicates | `null?` `pair?` `list?` `symbol?` `number?` `integer?` `float?` `string?` `boolean?` `fn?` `future?` `vector?` `zero?` `even?` `odd?` `positive?` `negative?` `not` `equal?` `eq?` |
 
 ## Module system
