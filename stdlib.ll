@@ -67,7 +67,7 @@
 
 (define-macro (defmethod class name params &rest body)
   (list 'add-method class (list 'quote name)
-    (cons 'lambda (cons params body))))
+    (cons 'lambda (cons params (if (null? body) '(#t) body)))))
 
 (define-macro (. obj method &rest args)
   (cons 'send (cons obj (cons (list 'quote method) args))))

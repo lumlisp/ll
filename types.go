@@ -213,7 +213,7 @@ type ErrRuntime struct {
 }
 
 func (e *ErrRuntime) Error() string {
-	if e.File != "" && e.Line > 0 {
+	if e.File != "" {
 		return fmt.Sprintf("%s:%d: %s", e.File, e.Line, e.Msg)
 	}
 	if e.Line > 0 {

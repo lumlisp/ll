@@ -43,6 +43,8 @@ func newEval(vfs map[string]string) *Eval {
 }
 
 func (e *Eval) loadStdlib() {
+	e.SetCurrentFile("<builtin:/stdlib.ll>")
+	defer e.SetCurrentFile("")
 	err := e.EvalString(stdlibSource)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\033[31mWarning: stdlib error: %v\033[0m\n", err)
@@ -321,7 +323,7 @@ func (e *Eval) evalSet(expr *Cons, env *Env) (Value, error) {
 
 	err = env.SetMutate(sym.Name, val)
 	if err != nil {
-		return nil, err
+		return nil, e.errAt(sym, "%v", err)
 	}
 	return val, nil
 }
@@ -648,6 +650,21 @@ func (e *Eval) evalRequire(expr *Cons, env *Env) (Value, error) {
 	return result, nil
 }
 
+func propagateLine(v Value, line int) {
+	switch val := v.(type) {
+	case *Cons:
+		if val.Line == 0 {
+			val.Line = line
+		}
+		propagateLine(val.Car, line)
+		propagateLine(val.Cdr, line)
+	case *Vector:
+		for _, item := range val.Items {
+			propagateLine(item, line)
+		}
+	}
+}
+
 func (e *Eval) evalCall(expr *Cons, env *Env) (Value, error) {
 	fn, err := e.eval(expr.Car, env)
 	if err != nil {
@@ -669,6 +686,7 @@ func (e *Eval) evalCall(expr *Cons, env *Env) (Value, error) {
 			}
 			return nil, err
 		}
+		propagateLine(result, expr.Line)
 		return e.eval(result, env)
 	}
 
