@@ -2,6 +2,7 @@ vendor
 ll-php
 ll-go
 ll
+ll.exe
 *.ll.php
 *.expected
 
