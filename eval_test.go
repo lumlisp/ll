@@ -1,7 +1,10 @@
 package main
 
 import (
+	"io"
+	"net/http"
 	"testing"
+	"time"
 )
 
 func parserExpr(t *testing.T, input string) Value {
@@ -729,5 +732,215 @@ func TestOopSlotRefInvalidSlot(t *testing.T) {
 	_, err := e.Eval(parserExpr(t, `(slot-ref (new Animal) 'missing)`))
 	if err == nil {
 		t.Fatal("expected error for missing slot")
+	}
+}
+
+func TestHttpCreateServer(t *testing.T) {
+	e := NewEval()
+	err := e.EvalString(`(define s (http/create-server "0.0.0.0" 8080))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := e.Env().Get("s")
+	srv, ok := v.(*HttpServer)
+	if !ok {
+		t.Fatalf("expected *HttpServer, got %T", v)
+	}
+	if srv.Host != "0.0.0.0" || srv.Port != 8080 {
+		t.Fatalf("expected 0.0.0.0:8080, got %s:%d", srv.Host, srv.Port)
+	}
+	if srv.Handler != Nil {
+		t.Fatal("expected nil handler initially")
+	}
+}
+
+func TestHttpCreateServerErrors(t *testing.T) {
+	e := NewEval()
+	_, err := e.Eval(parserExpr(t, `(http/create-server "localhost")`))
+	if err == nil {
+		t.Fatal("expected error for missing port")
+	}
+	_, err = e.Eval(parserExpr(t, `(http/create-server 123 8080)`))
+	if err == nil {
+		t.Fatal("expected error for non-string host")
+	}
+	_, err = e.Eval(parserExpr(t, `(http/create-server "localhost" "8080")`))
+	if err == nil {
+		t.Fatal("expected error for non-integer port")
+	}
+}
+
+func TestHttpSetHandler(t *testing.T) {
+	e := NewEval()
+	err := e.EvalString(`
+		(define s (http/create-server "localhost" 0))
+		(http/set-handler s (lambda (req) (http/make-response 200 '() "ok")))
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := e.Env().Get("s")
+	srv := v.(*HttpServer)
+	if srv.Handler == nil {
+		t.Fatal("handler should be set")
+	}
+}
+
+func TestHttpSetHandlerErrors(t *testing.T) {
+	e := NewEval()
+	_, err := e.Eval(parserExpr(t, `(http/set-handler "not-a-server" (lambda (req) 42))`))
+	if err == nil {
+		t.Fatal("expected error for non-server argument")
+	}
+	e.EvalString(`(define s (http/create-server "localhost" 0))`)
+	_, err = e.Eval(parserExpr(t, `(http/set-handler s "not-a-function")`))
+	if err == nil {
+		t.Fatal("expected error for non-function handler")
+	}
+}
+
+func TestHttpMakeResponse(t *testing.T) {
+	e := NewEval()
+	err := e.EvalString(`
+		(define r (http/make-response 200
+			'(("Content-Type" . "text/plain") ("X-Custom" . "val"))
+			"hello world"))
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := e.Env().Get("r")
+	resp, ok := v.(*HttpResponse)
+	if !ok {
+		t.Fatalf("expected *HttpResponse, got %T", v)
+	}
+	if resp.Status != 200 {
+		t.Fatalf("expected status 200, got %d", resp.Status)
+	}
+	if resp.Body != "hello world" {
+		t.Fatalf("expected body 'hello world', got %q", resp.Body)
+	}
+	if resp.Headers["Content-Type"] != "text/plain" {
+		t.Fatalf("expected Content-Type header, got %v", resp.Headers)
+	}
+	if resp.Headers["X-Custom"] != "val" {
+		t.Fatalf("expected X-Custom header, got %v", resp.Headers)
+	}
+}
+
+func TestHttpMakeResponseErrors(t *testing.T) {
+	e := NewEval()
+	_, err := e.Eval(parserExpr(t, `(http/make-response "200" '() "body")`))
+	if err == nil {
+		t.Fatal("expected error for non-integer status")
+	}
+	_, err = e.Eval(parserExpr(t, `(http/make-response 200 '() 123)`))
+	if err == nil {
+		t.Fatal("expected error for non-string body")
+	}
+	_, err = e.Eval(parserExpr(t, `(http/make-response 200 '(("K" . "V")) "b" "extra")`))
+	if err == nil {
+		t.Fatal("expected error for extra argument")
+	}
+}
+
+func TestHttpResponseAccessors(t *testing.T) {
+	e := NewEval()
+	err := e.EvalString(`
+		(define r (http/make-response 201 '(("Content-Type" . "text/html")) "<h1>hi</h1>"))
+		(define st (http/response-status r))
+		(define hdrs (http/response-headers r))
+		(define bd (http/response-body r))
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v, _ := e.Env().Get("st")
+	if v != Integer(201) {
+		t.Fatalf("expected status 201, got %v", v)
+	}
+
+	v, _ = e.Env().Get("bd")
+	if v != String("<h1>hi</h1>") {
+		t.Fatalf("expected body '<h1>hi</h1>', got %v", v)
+	}
+
+	v, _ = e.Env().Get("hdrs")
+	if v == Nil {
+		t.Fatal("headers should not be nil")
+	}
+}
+
+func TestHttpServerEndToEnd(t *testing.T) {
+	e := NewEval()
+
+	err := e.EvalString(`
+		(define s (http/create-server "localhost" 9997))
+		(http/set-handler s (lambda (req)
+			(define m (http/request-method req))
+			(define p (http/request-path req))
+			(define b (http/request-body req))
+			(http/make-response 200
+				'(("Content-Type" . "text/plain"))
+				(string-append m " " p " [" b "]"))))
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go e.EvalString(`(http/start-server s)`)
+	time.Sleep(200 * time.Millisecond)
+
+	// Test GET
+	resp, err := http.Get("http://localhost:9997/hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(body) != "GET /hello []" {
+		t.Fatalf("GET: unexpected response %q", body)
+	}
+
+	// Test POST with body
+	resp, err = http.Post("http://localhost:9997/test", "text/plain", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(body) != "POST /test []" {
+		t.Fatalf("POST: unexpected response %q", body)
+	}
+}
+
+func TestHttpRequestAccessors(t *testing.T) {
+	e := NewEval()
+
+	err := e.EvalString(`
+		(define s (http/create-server "localhost" 9996))
+		(http/set-handler s (lambda (req)
+			(define headers (http/request-headers req))
+			(define ua (if (null? headers) "none"
+				(let ((pair (car headers)))
+					(cdr pair))))
+			(http/make-response 200 '(("Content-Type" . "text/plain")) ua)))
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go e.EvalString(`(http/start-server s)`)
+	time.Sleep(200 * time.Millisecond)
+
+	resp, err := http.Get("http://localhost:9996/check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if len(body) == 0 {
+		t.Fatal("expected non-empty User-Agent in response")
 	}
 }

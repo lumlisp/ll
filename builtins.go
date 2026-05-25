@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1780,6 +1782,239 @@ func (e *Eval) builtinAddMethod(args []Value) (Value, error) {
 	}
 	class.Methods[methodSym.Name] = fn
 	return fn, nil
+}
+
+// --- HTTP Server ---
+
+func (e *Eval) builtinHttpCreateServer(args []Value) (Value, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("http/create-server requires 2 arguments (host port)")
+	}
+	host, ok := args[0].(String)
+	if !ok {
+		return nil, fmt.Errorf("http/create-server: host must be a string")
+	}
+	port, ok := args[1].(Integer)
+	if !ok {
+		return nil, fmt.Errorf("http/create-server: port must be an integer")
+	}
+	return &HttpServer{
+		Host:    string(host),
+		Port:    int(port),
+		Handler: Nil,
+	}, nil
+}
+
+func (e *Eval) builtinHttpSetHandler(args []Value) (Value, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("http/set-handler requires 2 arguments (server handler)")
+	}
+	server, ok := args[0].(*HttpServer)
+	if !ok {
+		return nil, fmt.Errorf("http/set-handler: first argument must be an http-server")
+	}
+	switch args[1].(type) {
+	case *Closure, *Primitive:
+		server.Handler = args[1]
+	default:
+		return nil, fmt.Errorf("http/set-handler: second argument must be a function")
+	}
+	return Nil, nil
+}
+
+func (e *Eval) builtinHttpStartServer(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/start-server requires 1 argument")
+	}
+	server, ok := args[0].(*HttpServer)
+	if !ok {
+		return nil, fmt.Errorf("http/start-server: argument must be an http-server")
+	}
+	if server.Handler == nil {
+		return nil, fmt.Errorf("http/start-server: no handler set")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		r.Body.Close()
+
+		headers := make(map[string]string)
+		for key, vals := range r.Header {
+			headers[key] = strings.Join(vals, ", ")
+		}
+
+		req := &HttpRequest{
+			Method:  r.Method,
+			Path:    r.URL.Path,
+			Headers: headers,
+			Body:    string(bodyBytes),
+		}
+
+		result, err := e.Apply(server.Handler, []Value{req})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resp, ok := result.(*HttpResponse)
+		if !ok {
+			http.Error(w, "handler must return an http-response", http.StatusInternalServerError)
+			return
+		}
+
+		for key, val := range resp.Headers {
+			w.Header().Set(key, val)
+		}
+		w.WriteHeader(resp.Status)
+		w.Write([]byte(resp.Body))
+	})
+
+	addr := fmt.Sprintf("%s:%d", server.Host, server.Port)
+	srv := &http.Server{Addr: addr, Handler: mux}
+
+	fmt.Fprintf(e.w, "HTTP server listening on %s\n", addr)
+	err := srv.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return Nil, err
+	}
+	return Nil, nil
+}
+
+func (e *Eval) builtinHttpRequestMethod(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/request-method requires 1 argument")
+	}
+	req, ok := args[0].(*HttpRequest)
+	if !ok {
+		return nil, fmt.Errorf("http/request-method: argument must be an http-request")
+	}
+	return String(req.Method), nil
+}
+
+func (e *Eval) builtinHttpRequestPath(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/request-path requires 1 argument")
+	}
+	req, ok := args[0].(*HttpRequest)
+	if !ok {
+		return nil, fmt.Errorf("http/request-path: argument must be an http-request")
+	}
+	return String(req.Path), nil
+}
+
+func (e *Eval) builtinHttpRequestHeaders(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/request-headers requires 1 argument")
+	}
+	req, ok := args[0].(*HttpRequest)
+	if !ok {
+		return nil, fmt.Errorf("http/request-headers: argument must be an http-request")
+	}
+	var result Value = Nil
+	for key, val := range req.Headers {
+		result = &Cons{
+			Car: &Cons{Car: String(key), Cdr: String(val)},
+			Cdr: result,
+		}
+	}
+	return result, nil
+}
+
+func (e *Eval) builtinHttpRequestBody(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/request-body requires 1 argument")
+	}
+	req, ok := args[0].(*HttpRequest)
+	if !ok {
+		return nil, fmt.Errorf("http/request-body: argument must be an http-request")
+	}
+	return String(req.Body), nil
+}
+
+func (e *Eval) builtinHttpMakeResponse(args []Value) (Value, error) {
+	if len(args) != 3 {
+		return nil, fmt.Errorf("http/make-response requires 3 arguments (status headers body)")
+	}
+	status, ok := args[0].(Integer)
+	if !ok {
+		return nil, fmt.Errorf("http/make-response: status must be an integer")
+	}
+
+	headers := make(map[string]string)
+	hdrs := args[1]
+	for hdrs != Nil {
+		pairCons, ok := hdrs.(*Cons)
+		if !ok {
+			break
+		}
+		pair, ok := pairCons.Car.(*Cons)
+		if ok {
+			key, okK := pair.Car.(String)
+			if okK {
+				switch val := pair.Cdr.(type) {
+				case String:
+					headers[string(key)] = string(val)
+				case *Cons:
+					if v, ok := val.Car.(String); ok {
+						headers[string(key)] = string(v)
+					}
+				}
+			}
+		}
+		hdrs = pairCons.Cdr
+	}
+
+	body, ok := args[2].(String)
+	if !ok {
+		return nil, fmt.Errorf("http/make-response: body must be a string")
+	}
+
+	return &HttpResponse{
+		Status:  int(status),
+		Headers: headers,
+		Body:    string(body),
+	}, nil
+}
+
+func (e *Eval) builtinHttpResponseStatus(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/response-status requires 1 argument")
+	}
+	resp, ok := args[0].(*HttpResponse)
+	if !ok {
+		return nil, fmt.Errorf("http/response-status: argument must be an http-response")
+	}
+	return Integer(resp.Status), nil
+}
+
+func (e *Eval) builtinHttpResponseHeaders(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/response-headers requires 1 argument")
+	}
+	resp, ok := args[0].(*HttpResponse)
+	if !ok {
+		return nil, fmt.Errorf("http/response-headers: argument must be an http-response")
+	}
+	var result Value = Nil
+	for key, val := range resp.Headers {
+		result = &Cons{
+			Car: &Cons{Car: String(key), Cdr: String(val)},
+			Cdr: result,
+		}
+	}
+	return result, nil
+}
+
+func (e *Eval) builtinHttpResponseBody(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("http/response-body requires 1 argument")
+	}
+	resp, ok := args[0].(*HttpResponse)
+	if !ok {
+		return nil, fmt.Errorf("http/response-body: argument must be an http-response")
+	}
+	return String(resp.Body), nil
 }
 
 // --- System interface ---

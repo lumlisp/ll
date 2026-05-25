@@ -43,6 +43,8 @@ Only recognized on the very first line of a file.
 | `#f`       | Boolean false |
 | `'x`       | Shorthand for `(quote x)` |
 | `(a b c)`  | List (Cons cells) |
+| `(a . b)`  | Dotted pair (improper list) |
+| `(a b . c)` | Dotted pair with improper tail |
 | `#(1 2 3)` | Vector |
 
 ### Identifiers (Symbols)
@@ -398,6 +400,60 @@ Module resolution order for each path:
 (. d make-older 2)                ; inherited method
 ```
 
+### HTTP Server
+
+Built-in HTTP server backed by Go's `net/http`. Handlers receive a request object
+and must return a response created with `http/make-response`.
+
+| Function | Description |
+|----------|-------------|
+| `(http/create-server host port)` | Create HTTP server (returns server object) |
+| `(http/set-handler server handler)` | Set request handler (a function accepting one arg — the request) |
+| `(http/start-server server)` | Start the server (blocking call) |
+| `(http/request-method req)` | Return HTTP method string (GET, POST, etc.) |
+| `(http/request-path req)` | Return request path string |
+| `(http/request-headers req)` | Return headers as an alist `((key . val) ...)` |
+| `(http/request-body req)` | Return request body as string |
+| `(http/make-response status headers body)` | Create an HTTP response |
+| `(http/response-status resp)` | Return response status code |
+| `(http/response-headers resp)` | Return response headers as an alist `((key . val) ...)` |
+| `(http/response-body resp)` | Return response body string |
+
+```scheme
+;; Simple hello server
+(define server (http/create-server "localhost" 8080))
+
+(http/set-handler server (lambda (req)
+  (define method (http/request-method req))
+  (define path (http/request-path req))
+  (define body (http/request-body req))
+
+  (http/make-response 200
+    '(("Content-Type" . "text/plain"))
+    (string-append "Method: " method "\n"
+                   "Path: " path "\n"
+                   "Body: " body "\n"))))
+
+(println "Listening on http://localhost:8080")
+(http/start-server server)
+```
+
+```scheme
+;; JSON endpoint example
+(define server (http/create-server "0.0.0.0" 3000))
+
+(http/set-handler server (lambda (req)
+  (if (string=? (http/request-path req) "/api/hello")
+    (http/make-response 200
+      '(("Content-Type" . "application/json"))
+      "{\"message\": \"Hello from LL!\"}")
+    (http/make-response 404
+      '(("Content-Type" . "text/plain"))
+      "Not Found"))))
+
+(http/start-server server)
+```
+
 ### System
 | Function | Description |
 |----------|-------------|
@@ -417,3 +473,4 @@ See `examples/` directory:
 - `php-interop.ll` — Standard library demo (replaces old PHP interop)
 - `list-ports.ll` — System command output with `shell->string`
 - `async.ll` — `future`, `await`, `co` async programming
+- `http-server.ll` — HTTP server example

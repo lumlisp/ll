@@ -80,5 +80,31 @@ func (p *Parser) parseList(tokens []Token, i int) (Value, int, error) {
 	if i >= len(tokens) {
 		return nil, 0, fmt.Errorf("unterminated list")
 	}
+
+	dotIdx := -1
+	for j, item := range items {
+		if sym, ok := item.(*Sym); ok && sym.Name == "." && j > 0 {
+			dotIdx = j
+			break
+		}
+	}
+
+	if dotIdx >= 0 {
+		if dotIdx+1 >= len(items) {
+			return nil, 0, fmt.Errorf("dotted pair: missing element after '.'")
+		}
+		if dotIdx+2 < len(items) {
+			return nil, 0, fmt.Errorf("dotted pair: expected exactly one element after '.'")
+		}
+		result := SliceToList(items[:dotIdx])
+		for c := result.(*Cons); ; c = c.Cdr.(*Cons) {
+			if c.Cdr == Nil {
+				c.Cdr = items[dotIdx+1]
+				break
+			}
+		}
+		return result, i + 1, nil
+	}
+
 	return SliceToList(items), i + 1, nil
 }

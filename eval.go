@@ -1053,4 +1053,17 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("instance?", &Primitive{Name: "instance?", Fn: e.builtinInstanceOf})
 	e.env.Set("class-of", &Primitive{Name: "class-of", Fn: e.builtinClassOf})
 	e.env.Set("add-method", &Primitive{Name: "add-method", Fn: e.builtinAddMethod})
+
+	// HTTP Server
+	e.env.Set("http/create-server", &Primitive{Name: "http/create-server", Fn: e.builtinHttpCreateServer})
+	e.env.Set("http/set-handler", &Primitive{Name: "http/set-handler", Fn: e.builtinHttpSetHandler})
+	e.env.Set("http/start-server", &Primitive{Name: "http/start-server", Fn: e.builtinHttpStartServer})
+	e.env.Set("http/request-method", &Primitive{Name: "http/request-method", Fn: e.builtinHttpRequestMethod})
+	e.env.Set("http/request-path", &Primitive{Name: "http/request-path", Fn: e.builtinHttpRequestPath})
+	e.env.Set("http/request-headers", &Primitive{Name: "http/request-headers", Fn: e.builtinHttpRequestHeaders})
+	e.env.Set("http/request-body", &Primitive{Name: "http/request-body", Fn: e.builtinHttpRequestBody})
+	e.env.Set("http/make-response", &Primitive{Name: "http/make-response", Fn: e.builtinHttpMakeResponse})
+	e.env.Set("http/response-status", &Primitive{Name: "http/response-status", Fn: e.builtinHttpResponseStatus})
+	e.env.Set("http/response-headers", &Primitive{Name: "http/response-headers", Fn: e.builtinHttpResponseHeaders})
+	e.env.Set("http/response-body", &Primitive{Name: "http/response-body", Fn: e.builtinHttpResponseBody})
 }

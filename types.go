@@ -204,6 +204,34 @@ func (r *ReturnSignal) Error() string  { return "<return>" }
 func (*ReturnSignal) isValue()         {}
 func (r *ReturnSignal) String() string { return r.Value.String() }
 
+type HttpServer struct {
+	Host    string
+	Port    int
+	Handler Value
+}
+
+func (*HttpServer) isValue()         {}
+func (s *HttpServer) String() string { return fmt.Sprintf("#<http-server %s:%d>", s.Host, s.Port) }
+
+type HttpRequest struct {
+	Method  string
+	Path    string
+	Headers map[string]string
+	Body    string
+}
+
+func (*HttpRequest) isValue()         {}
+func (r *HttpRequest) String() string { return fmt.Sprintf("#<http-request %s %s>", r.Method, r.Path) }
+
+type HttpResponse struct {
+	Status  int
+	Headers map[string]string
+	Body    string
+}
+
+func (*HttpResponse) isValue()         {}
+func (r *HttpResponse) String() string { return fmt.Sprintf("#<http-response %d>", r.Status) }
+
 func IsTruthy(v Value) bool {
 	switch val := v.(type) {
 	case Boolean:
