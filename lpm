@@ -12,12 +12,12 @@
     (begin (fn (car lst))
            (for-each fn (cdr lst)))))
 
-(define (run-init target-dir)
+(define (run-init target-dir pkg)
 
 (if (file-exists? (string-append target-dir "/init.ll"))
     (begin
-      (println "You can run init.ll to initialize the package")
-      (println "Press \"y\" to continue")
+      (println "You can run init.ll to initialize the package (" pkg ")")
+      (println "Press \"y\" to run")
       (if (string=? (read-line) "y")
           (system (string-append "ll " target-dir "/init.ll"))
           (println "Aborting...")))
@@ -120,7 +120,7 @@
 
   (define hash (string-trim (shell->string (string-append "git -C " target-dir " rev-parse HEAD"))))
   (println "  Hash:" hash)
-  (run-init target-dir)
+  (run-init target-dir (string-append vendor "/" name))
 
   (if global?
     (println "  Installed globally (not saved to ll.json)")
@@ -146,7 +146,7 @@
       (system (string-append "mkdir -p ll_modules/" vendor))
       (define result (system (string-append "git clone " url " " target-dir)))
       (if (= result 0)
-        (begin (println "    Done!") (run-init target-dir))
+        (begin (println "    Done!") (run-init target-dir (string-append vendor "/" pkg)))
         (println "    Error: git clone failed for" name)))))
 
 (define (cmd-install)
