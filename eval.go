@@ -151,10 +151,26 @@ func (e *Eval) eval(expr Value, env *Env) (Value, error) {
 			return e.evalAwait(cons, env)
 		case "co":
 			return e.evalCo(cons, env)
+		case "return":
+			return e.evalReturn(cons, env)
 		}
 	}
 
 	return e.evalCall(cons, env)
+}
+
+func (e *Eval) evalReturn(expr *Cons, env *Env) (Value, error) {
+	args := expr.Cdr
+	argCons, ok := args.(*Cons)
+	var val Value = Nil
+	if ok {
+		var err error
+		val, err = e.eval(argCons.Car, env)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nil, &ReturnSignal{Value: val}
 }
 
 func (e *Eval) evalQuote(expr *Cons, env *Env) (Value, error) {
@@ -682,7 +698,11 @@ func (e *Eval) applyClosure(fn *Closure, args []Value) (Value, error) {
 				var err error
 				result, err = e.eval(bodyExpr, env)
 				if err != nil {
-					f.Resolve(Nil, err)
+					if rs, ok := err.(*ReturnSignal); ok {
+						f.Resolve(rs.Value, nil)
+					} else {
+						f.Resolve(Nil, err)
+					}
 					return
 				}
 			}
@@ -696,6 +716,9 @@ func (e *Eval) applyClosure(fn *Closure, args []Value) (Value, error) {
 		var err error
 		result, err = e.eval(bodyExpr, env)
 		if err != nil {
+			if rs, ok := err.(*ReturnSignal); ok {
+				return rs.Value, nil
+			}
 			return nil, err
 		}
 	}
@@ -788,6 +811,9 @@ func (e *Eval) applyMacro(m *Macro, rawArgs []Value) (Value, error) {
 		var err error
 		result, err = e.eval(bodyExpr, env)
 		if err != nil {
+			if rs, ok := err.(*ReturnSignal); ok {
+				return rs.Value, nil
+			}
 			return nil, err
 		}
 	}
@@ -1013,6 +1039,8 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("system", &Primitive{Name: "system", Fn: e.builtinSystem})
 	e.env.Set("shell->string", &Primitive{Name: "shell->string", Fn: e.builtinShellToString})
 
+	e.env.Set("sleep", &Primitive{Name: "sleep", Fn: e.builtinSleep})
+	e.env.Set("usleep", &Primitive{Name: "usleep", Fn: e.builtinUsleep})
 	e.env.Set("exit", &Primitive{Name: "exit", Fn: e.builtinExit})
 	e.env.Set("get-file-dir", &Primitive{Name: "get-file-dir", Fn: e.builtinGetFileDir})
 }

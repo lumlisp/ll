@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func toFloat(v Value) (float64, bool) {
@@ -1360,6 +1361,33 @@ func (e *Eval) builtinDeleteFile(args []Value) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
+	return Nil, nil
+}
+
+func (e *Eval) builtinSleep(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("sleep requires 1 argument")
+	}
+	switch v := args[0].(type) {
+	case Integer:
+		time.Sleep(time.Duration(v) * time.Second)
+	case Float:
+		time.Sleep(time.Duration(v * 1e9))
+	default:
+		return nil, fmt.Errorf("sleep: argument must be a number")
+	}
+	return Nil, nil
+}
+
+func (e *Eval) builtinUsleep(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("usleep requires 1 argument")
+	}
+	v, ok := args[0].(Integer)
+	if !ok {
+		return nil, fmt.Errorf("usleep: argument must be an integer")
+	}
+	time.Sleep(time.Duration(v) * time.Millisecond)
 	return Nil, nil
 }
 

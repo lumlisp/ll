@@ -173,6 +173,14 @@ func ListToSlice(v Value) ([]Value, bool) {
 	return result, true
 }
 
+type ReturnSignal struct {
+	Value Value
+}
+
+func (r *ReturnSignal) Error() string  { return "<return>" }
+func (*ReturnSignal) isValue()         {}
+func (r *ReturnSignal) String() string { return r.Value.String() }
+
 func IsTruthy(v Value) bool {
 	switch val := v.(type) {
 	case Boolean:
