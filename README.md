@@ -6,7 +6,9 @@ A Lisp dialect implemented in Go.
 go build -o ll .
 ./ll                      # REPL
 ./ll file.ll [args...]    # run file with arguments
-./ll --help               # usage
+./ll -h, --help           # usage
+./ll -v, --version        # version info
+./ll -b file.ll [-o out]  # bundle script + deps into executable
 ```
 
 ## Quick start
@@ -31,9 +33,20 @@ Script arguments are available via `*args*` variable:
 
 ## Built-in functions
 
-| Function | Description |
-|----------|-------------|
-| `(get-file-dir)` | Returns absolute directory of the running script (like `__DIR__` in PHP). Returns `""` in REPL. |
+Full reference in [docs/reference.md](docs/reference.md). Highlights:
+
+| Category | Functions |
+|----------|-----------|
+| Arithmetic | `+` `-` `*` `/` `%` `abs` `min` `max` `expt` `sqrt` `quotient` `remainder` `floor` `ceil` `round` `inc` `dec` |
+| Comparisons | `=` `>` `<` `>=` `<=` |
+| Lists | `car` `cdr` `cons` `list` `length` `append` `reverse` `list-ref` `list-tail` `take` `drop` `range` `member` `assoc` `map` `filter` `foldl` `foldr` |
+| Vectors | `vector` `make-vector` `vector-ref` `vector-set!` `vector-length` `vector-fill!` `vector-map` `vector->list` `list->vector` |
+| Strings | `string-length` `string-ref` `substring` `string-append` `string=?` `string-ci=?` `string<?` `string>?` `string-downcase` `string-upcase` `string-trim` `string-split` `string-join` |
+| Conversion | `number->string` `string->number` `symbol->string` `string->symbol` |
+| I/O | `display` `write` `print` `println` `newline` `read-line` |
+| File | `file->string` `string->file` `file-exists?` `delete-file` |
+| System | `system` `shell->string` `sleep` `usleep` `exit` `get-file-dir` |
+| Predicates | `null?` `pair?` `list?` `symbol?` `number?` `integer?` `float?` `string?` `boolean?` `fn?` `future?` `vector?` `zero?` `even?` `odd?` `positive?` `negative?` `not` `equal?` `eq?` |
 
 ## Module system
 

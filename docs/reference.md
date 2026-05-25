@@ -11,8 +11,9 @@ first-class closures, vectors, macros, and a comprehensive standard library.
 go build -o ll .
 ./ll                   # REPL
 ./ll file.ll [args...] # run file with arguments
-./ll --help            # usage info
-./ll --version         # version info
+./ll -h, --help        # usage info
+./ll -v, --version     # version info
+./ll -b file.ll [-o out]  # bundle script + deps into executable
 ```
 
 Script arguments are accessible via `*args*` variable (list of strings).
@@ -250,11 +251,11 @@ Module resolution order for each path:
 ### Comparisons
 | Function | Returns |
 |----------|---------|
-| `(= a b ...)` | `#t` if all equal |
-| `(> a b ...)` | `#t` if strictly decreasing |
-| `(< a b ...)` | `#t` if strictly increasing |
-| `(>= a b ...)` | `#t` if non-increasing |
-| `(<= a b ...)` | `#t` if non-decreasing |
+| `(= a b)` | `#t` if a and b are numerically equal |
+| `(> a b)` | `#t` if a > b |
+| `(< a b)` | `#t` if a < b |
+| `(>= a b)` | `#t` if a >= b |
+| `(<= a b)` | `#t` if a <= b |
 
 ### List Operations
 | Function | Description |
@@ -273,6 +274,7 @@ Module resolution order for each path:
 | `(list-tail lst n)` | Nth cdr |
 | `(take lst n)` | First n elements |
 | `(drop lst n)` | All but first n |
+| `(range end)` | Integers from 0 to end-1 |
 | `(range start end)` | Integers from start to end-1 |
 | `(member x lst)` | First tail starting with x, or `#f` |
 | `(assoc key alist)` | Lookup key in association list |
@@ -299,7 +301,7 @@ Module resolution order for each path:
 | `(negative? n)` | `#t` if < 0 |
 | `(not x)` | Boolean negation |
 | `(equal? a b)` | Structural equality |
-| `(eq? a b)` | Identity equality |
+| `(eq? a b)` | Alias for `equal?` |
 
 ### String Operations
 | Function | Description |
@@ -315,6 +317,7 @@ Module resolution order for each path:
 | `(string-downcase s)` | Lowercase |
 | `(string-upcase s)` | Uppercase |
 | `(string-trim s)` | Strip leading/trailing whitespace |
+| `(string-split s)` | Split on whitespace |
 | `(string-split s sep)` | Split on separator |
 | `(string-join parts sep)` | Join with separator |
 | `(number->string n)` | Number to string |
@@ -326,7 +329,8 @@ Module resolution order for each path:
 | Function | Description |
 |----------|-------------|
 | `(vector x ...)` | Create vector |
-| `(make-vector n)` | Zero-filled vector of length n |
+| `(make-vector n)` | Vector of length n filled with `()` |
+| `(make-vector n fill)` | Vector of length n filled with `fill` |
 | `(vector-ref v i)` | Index (0-based) |
 | `(vector-set! v i x)` | Mutate element |
 | `(vector-length v)` | Length |
@@ -340,8 +344,11 @@ Module resolution order for each path:
 | Function | Description |
 |----------|-------------|
 | `(display x)` | Print without newline (no quotes) |
-| `(println x ...)` | Print with newline |
+| `(print x ...)` | Print with spaces, no newline |
+| `(println x ...)` | Print with spaces and newline |
+| `(newline)` | Print newline |
 | `(write x)` | Print with quoting |
+| `(read-line)` | Read a line from stdin (returns string, or `()` on EOF) |
 | `(file->string path)` | Read file to string |
 | `(string->file path content)` | Write string to file |
 | `(file-exists? path)` | `#t` if file exists |
@@ -352,6 +359,10 @@ Module resolution order for each path:
 |----------|-------------|
 | `(system cmd)` | Run command, print output, return exit code |
 | `(shell->string cmd)` | Run command, capture stdout as string |
+| `(sleep n)` | Sleep n seconds (integer or float) |
+| `(usleep n)` | Sleep n milliseconds |
+| `(exit)` | Exit with code 0 |
+| `(exit n)` | Exit with code n |
 
 ## Examples
 
