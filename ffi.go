@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"sync"
 )
 
@@ -103,6 +104,34 @@ func (e *Eval) builtinCgoCall(args []Value) (Value, error) {
 		return nil, fmt.Errorf("cgo/call: function '%s' not resolved (use cgo/func first)", string(fnName))
 	}
 
+	// Check if any argument is a Float — if so, use double calling convention
+	hasFloat := false
+	for _, a := range args[2:] {
+		if _, ok := a.(Float); ok {
+			hasFloat = true
+			break
+		}
+	}
+
+	if hasFloat {
+		dblArgs := make([]float64, 0, len(args)-2)
+		for _, a := range args[2:] {
+			switch v := a.(type) {
+			case Float:
+				dblArgs = append(dblArgs, float64(v))
+			case Integer:
+				dblArgs = append(dblArgs, float64(v))
+			default:
+				dblArgs = append(dblArgs, 0)
+			}
+		}
+		result, err := callFuncDouble(fnPtr, dblArgs)
+		if err != nil {
+			return nil, fmt.Errorf("cgo/call: %v", err)
+		}
+		return Float(result), nil
+	}
+
 	callArgs := make([]uintptr, 0, len(args)-2)
 	for _, a := range args[2:] {
 		callArgs = append(callArgs, valueToUintptr(a))
@@ -147,7 +176,7 @@ func valueToUintptr(v Value) uintptr {
 	case Integer:
 		return uintptr(int64(val))
 	case Float:
-		return uintptr(int64(val))
+		return uintptr(math.Float64bits(float64(val)))
 	case Boolean:
 		if val {
 			return 1

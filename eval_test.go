@@ -1679,4 +1679,89 @@ func TestCgoCloseErrors(t *testing.T) {
 	}
 }
 
+func TestCgoRealCallInt(t *testing.T) {
+	e := NewEval()
+	lib, err := evalStringResult(t, e, `(cgo/open "libm.so.6")`)
+	if err != nil {
+		t.Skip("libm.so.6 not available:", err)
+	}
+
+	// Store lib in env so we can reference it by symbol
+	e.env.Set("the-lib", lib)
+	defer e.env.Set("the-lib", Nil)
+
+	// Register and call abs
+	_, err = evalStringResult(t, e, `(cgo/func the-lib "abs")`)
+	if err != nil {
+		t.Fatal("cgo/func abs failed:", err)
+	}
+
+	result, err := evalStringResult(t, e, `(cgo/call the-lib "abs" -42)`)
+	if err != nil {
+		t.Fatal("cgo/call abs failed:", err)
+	}
+	if result != Integer(42) {
+		t.Errorf("abs(-42) = %v, want 42", result)
+	}
+
+	// Cleanup
+	evalStringResult(t, e, `(cgo/close the-lib)`)
+}
+
+func TestCgoRealCallFloat(t *testing.T) {
+	e := NewEval()
+	lib, err := evalStringResult(t, e, `(cgo/open "libm.so.6")`)
+	if err != nil {
+		t.Skip("libm.so.6 not available:", err)
+	}
+
+	e.env.Set("the-lib", lib)
+	defer e.env.Set("the-lib", Nil)
+
+	_, err = evalStringResult(t, e, `(cgo/func the-lib "sqrt")`)
+	if err != nil {
+		t.Fatal("cgo/func sqrt failed:", err)
+	}
+
+	result, err := evalStringResult(t, e, `(cgo/call the-lib "sqrt" 144.0)`)
+	if err != nil {
+		t.Fatal("cgo/call sqrt failed:", err)
+	}
+	fr, ok := result.(Float)
+	if !ok {
+		t.Fatalf("sqrt result is %T, want Float", result)
+	}
+	if float64(fr) < 11.999 || float64(fr) > 12.001 {
+		t.Errorf("sqrt(144.0) = %v, want ~12", float64(fr))
+	}
+
+	evalStringResult(t, e, `(cgo/close the-lib)`)
+}
+
+func TestCgoRealCallFloatIntArg(t *testing.T) {
+	e := NewEval()
+	lib, err := evalStringResult(t, e, `(cgo/open "libm.so.6")`)
+	if err != nil {
+		t.Skip("libm.so.6 not available:", err)
+	}
+
+	e.env.Set("the-lib", lib)
+	defer e.env.Set("the-lib", Nil)
+
+	_, err = evalStringResult(t, e, `(cgo/func the-lib "sqrt")`)
+	if err != nil {
+		t.Fatal("cgo/func sqrt failed:", err)
+	}
+
+	// With only integer args, the function uses the integer calling convention
+	// and the result will be garbage — but it shouldn't crash
+	result, err := evalStringResult(t, e, `(cgo/call the-lib "sqrt" 144)`)
+	if err != nil {
+		t.Fatalf("sqrt with integer arg should not error: %v", err)
+	}
+	_ = result // result is garbage due to wrong calling convention, that's expected
+
+	evalStringResult(t, e, `(cgo/close the-lib)`)
+}
+
 

@@ -19,3 +19,7 @@ func dlclose(handle uintptr) error {
 func callFunc(fnPtr uintptr, args []uintptr) (uintptr, error) {
 	return 0, errors.New("cgo/call requires CGO_ENABLED=1")
 }
+
+func callFuncDouble(fnPtr uintptr, args []float64) (float64, error) {
+	return 0, errors.New("cgo/call requires CGO_ENABLED=1")
+}

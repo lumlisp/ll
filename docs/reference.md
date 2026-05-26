@@ -550,16 +550,31 @@ Supported LL forms: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, arithmeti
 |----------|-------------|
 | `(cgo/open path)` | Load shared library (returns library object, or `()` on error) |
 | `(cgo/func lib name)` | Look up function in library (registers for calling) |
-| `(cgo/call lib name args...)` | Call a registered function (up to 6 integer/pointer args) |
+| `(cgo/call lib name args...)` | Call a registered function (up to 6 args) |
 | `(cgo/close lib)` | Unload library |
 
 Requires `CGO_ENABLED=1` at build time. On `CGO_ENABLED=0`, all functions return an error.
 
+**Calling convention detection:**
+- If **any** argument is a float (`3.14`, `144.0`), ALL arguments are passed as C `double` and the result is returned as a Float
+- If **all** arguments are integers, they are passed as C `long` and the result is returned as an Integer
+- Mixed int/float within one call works (ints are promoted to double)
+- Only numeric/pointer arguments supported — no strings, structs, or void functions
+
 ```scheme
 (define lib (cgo/open "libm.so.6"))
+
+;; Integer function: all args are integers
+(cgo/func lib "abs")
+(println (cgo/call lib "abs" -42))   ; => 42
+
+;; Float function: pass at least one arg as float
 (cgo/func lib "sqrt")
-(define result (cgo/call lib "sqrt" 144))
-(println "sqrt(144) =" result)   ; => sqrt(144) = 12
+(println (cgo/call lib "sqrt" 144.0))  ; => 12.0
+
+(cgo/func lib "sin")
+(println (cgo/call lib "sin" 0.0))     ; => 0.0
+
 (cgo/close lib)
 ```
 

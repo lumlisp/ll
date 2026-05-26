@@ -27,11 +27,17 @@ typedef double (*fnd0)(void);
 typedef double (*fnd1)(double);
 typedef double (*fnd2)(double, double);
 typedef double (*fnd3)(double, double, double);
+typedef double (*fnd4)(double, double, double, double);
+typedef double (*fnd5)(double, double, double, double, double);
+typedef double (*fnd6)(double, double, double, double, double, double);
 
 double call_fnd0(void *f) { return ((fnd0)f)(); }
 double call_fnd1(void *f, double a) { return ((fnd1)f)(a); }
 double call_fnd2(void *f, double a, double b) { return ((fnd2)f)(a, b); }
 double call_fnd3(void *f, double a, double b, double c) { return ((fnd3)f)(a, b, c); }
+double call_fnd4(void *f, double a, double b, double c, double d) { return ((fnd4)f)(a, b, c, d); }
+double call_fnd5(void *f, double a, double b, double c, double d, double e) { return ((fnd5)f)(a, b, c, d, e); }
+double call_fnd6(void *f, double a, double b, double c, double d, double e, double f2) { return ((fnd6)f)(a, b, c, d, e, f2); }
 */
 import "C"
 import (
@@ -59,6 +65,28 @@ func dlsym(handle uintptr, name string) (uintptr, error) {
 		return 0, errors.New(errStr)
 	}
 	return uintptr(unsafe.Pointer(ptr)), nil
+}
+
+func callFuncDouble(fnPtr uintptr, args []float64) (float64, error) {
+	fn := unsafe.Pointer(fnPtr)
+	switch len(args) {
+	case 0:
+		return float64(C.call_fnd0(fn)), nil
+	case 1:
+		return float64(C.call_fnd1(fn, C.double(args[0]))), nil
+	case 2:
+		return float64(C.call_fnd2(fn, C.double(args[0]), C.double(args[1]))), nil
+	case 3:
+		return float64(C.call_fnd3(fn, C.double(args[0]), C.double(args[1]), C.double(args[2]))), nil
+	case 4:
+		return float64(C.call_fnd4(fn, C.double(args[0]), C.double(args[1]), C.double(args[2]), C.double(args[3]))), nil
+	case 5:
+		return float64(C.call_fnd5(fn, C.double(args[0]), C.double(args[1]), C.double(args[2]), C.double(args[3]), C.double(args[4]))), nil
+	case 6:
+		return float64(C.call_fnd6(fn, C.double(args[0]), C.double(args[1]), C.double(args[2]), C.double(args[3]), C.double(args[4]), C.double(args[5]))), nil
+	default:
+		return 0, errors.New("cgo/call: too many arguments for float function (max 6)")
+	}
 }
 
 func dlclose(handle uintptr) error {
