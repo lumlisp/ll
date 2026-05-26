@@ -466,10 +466,10 @@ and must return a response created with `http/make-response`.
 
 ### JSON
 
-| Функция | Описание |
-|---------|----------|
-| `(json/encode val)` | Преобразует значение LL в JSON-строку |
-| `(json/decode str)` | Разбирает JSON-строку в значение LL |
+| Function | Description |
+|----------|-------------|
+| `(json/encode val)` | Convert LL value to JSON string |
+| `(json/decode str)` | Parse JSON string to LL value |
 
 ```scheme
 (json/encode '(1 2 3))                      ; => "[1,2,3]"
@@ -477,21 +477,21 @@ and must return a response created with `http/make-response`.
 (json/decode "{\"x\":1,\"y\":2}")            ; => ((x . 1) (y . 2))
 ```
 
-### PDO — База данных
+### PDO Database
 
-| Функция | Описание |
-|---------|----------|
-| `(pdo/open dsn user password)` | Открывает соединение с БД (возвращает объект соединения или `()` при ошибке) |
-| `(pdo/exec conn sql . params)` | Выполняет INSERT/UPDATE/DELETE, возвращает количество затронутых строк |
-| `(pdo/query conn sql . params)` | Выполняет SELECT, возвращает строки как список ассоциативных списков `((колонка . значение) ...)` |
-| `(pdo/close conn)` | Закрывает соединение |
+| Function | Description |
+|----------|-------------|
+| `(pdo/open dsn user password)` | Open database connection (returns connection object, or `()` on error) |
+| `(pdo/exec conn sql . params)` | Execute INSERT/UPDATE/DELETE, return affected row count |
+| `(pdo/query conn sql . params)` | Execute SELECT, return rows as list of alists `((col . val) ...)` |
+| `(pdo/close conn)` | Close connection |
 
-Поддерживаемые префиксы DSN:
-- `sqlite:filename.db` — SQLite (встраиваемый)
+Supported DSN prefixes:
+- `sqlite:filename.db` — SQLite (embedded)
 - `mysql:user:pass@tcp(host:port)/dbname` — MySQL
 - `postgres:host=... dbname=...` — PostgreSQL
 
-Параметризованные запросы через `?`:
+Uses `?` placeholders for parameterized queries:
 
 ```scheme
 (define db (pdo/open "sqlite:test.db" "" ""))
@@ -503,39 +503,39 @@ and must return a response created with `http/make-response`.
 
 ### WebSocket
 
-| Функция | Описание |
-|---------|----------|
-| `(ws/create-server host port)` | Создаёт WebSocket-сервер (возвращает объект сервера) |
-| `(ws/set-handler server handler)` | Устанавливает обработчик подключений (функция с одним аргументом — соединением) |
-| `(ws/start-server server)` | Запускает сервер (возвращает Future, не блокирует) |
-| `(ws/connect url)` | Подключается к WebSocket-серверу (возвращает соединение или `()` при ошибке) |
-| `(ws/send conn msg)` | Отправляет текстовое сообщение |
-| `(ws/receive conn)` | Получает текстовое сообщение (блокирует) |
-| `(ws/close conn)` | Закрывает соединение |
+| Function | Description |
+|----------|-------------|
+| `(ws/create-server host port)` | Create WebSocket server (returns server object) |
+| `(ws/set-handler server handler)` | Set connection handler (function accepting one arg — the connection) |
+| `(ws/start-server server)` | Start server listener (returns immediately via Future) |
+| `(ws/connect url)` | Connect to WebSocket server (returns connection, or `()` on error) |
+| `(ws/send conn msg)` | Send text message |
+| `(ws/receive conn)` | Receive text message (blocks) |
+| `(ws/close conn)` | Close connection |
 
 ```scheme
-;; Сервер
+;; Server
 (define server (ws/create-server "localhost" 8080))
 (ws/set-handler server (lambda (conn)
   (define msg (ws/receive conn))
   (ws/send conn (string-append "echo: " msg))))
 (ws/start-server server)
 
-;; Клиент
+;; Client
 (define conn (ws/connect "ws://localhost:8080"))
 (ws/send conn "hello")
 (println (ws/receive conn))  ; => "echo: hello"
 (ws/close conn)
 ```
 
-### js/encode — Транспилятор LL → JavaScript
+### js/encode — LL to JavaScript Transpiler
 
-| Функция | Описание |
-|---------|----------|
-| `(js/encode-string expr)` | Преобразует выражение LL в JavaScript-строку |
-| `(js/encode-file path expr)` | Преобразует выражение LL в JavaScript и записывает в файл |
+| Function | Description |
+|----------|-------------|
+| `(js/encode-string expr)` | Convert an LL expression to a JavaScript string |
+| `(js/encode-file path expr)` | Convert an LL expression to JavaScript and write to file |
 
-Поддерживаемые формы LL: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, арифметика, сравнения, строки, векторы, async (`future`, `co`, `await`), операции со списками (`car`, `cdr`, `cons`, `list`), `while`, `for`, `display`, `println`.
+Supported LL forms: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, arithmetic, comparisons, strings, vectors, async (`future`, `co`, `await`), list operations (`car`, `cdr`, `cons`, `list`), `while`, `for`, `display`, `println`.
 
 ```scheme
 (js/encode-string '(define (fib n)
@@ -544,16 +544,16 @@ and must return a response created with `http/make-response`.
 ;; => "function fib(n) { if (n < 2) { return n; } else { return fib(n - 1) + fib(n - 2); } }"
 ```
 
-### CGO/FFI — Привязка C-библиотек
+### CGO/FFI — C Library Bindings
 
-| Функция | Описание |
-|---------|----------|
-| `(cgo/open path)` | Загружает shared library (возвращает объект библиотеки или `()` при ошибке) |
-| `(cgo/func lib name)` | Находит функцию в библиотеке (регистрирует для вызова) |
-| `(cgo/call lib name args...)` | Вызывает зарегистрированную функцию (до 6 целочисленных/указательных аргументов) |
-| `(cgo/close lib)` | Выгружает библиотеку |
+| Function | Description |
+|----------|-------------|
+| `(cgo/open path)` | Load shared library (returns library object, or `()` on error) |
+| `(cgo/func lib name)` | Look up function in library (registers for calling) |
+| `(cgo/call lib name args...)` | Call a registered function (up to 6 integer/pointer args) |
+| `(cgo/close lib)` | Unload library |
 
-Требует `CGO_ENABLED=1` при сборке. При `CGO_ENABLED=0` все функции возвращают ошибку.
+Requires `CGO_ENABLED=1` at build time. On `CGO_ENABLED=0`, all functions return an error.
 
 ```scheme
 (define lib (cgo/open "libm.so.6"))
@@ -563,17 +563,17 @@ and must return a response created with `http/make-response`.
 (cgo/close lib)
 ```
 
-## Примеры
+## Examples
 
-Смотрите директорию `examples/`:
-- `hello.ll` — Hello world, переменные, математика, списки
-- `fib.ll` — Рекурсивный Фибоначчи
-- `fizzbuzz.ll` — FizzBuzz с `for` и `cond`
-- `php-interop.ll` — Демо стандартной библиотеки (замена старого PHP interop)
-- `list-ports.ll` — Вывод системной команды через `shell->string`
-- `async.ll` — `future`, `await`, `co` асинхронное программирование
-- `http-server.ll` — Пример HTTP-сервера
-- `pdo.ll` — Пример PDO (SQLite)
-- `ws.ll` — Пример WebSocket сервера и клиента
-- `js-encode.ll` — Пример транспилятора LL→JS
-- `cgo.ll` — Пример CGO FFI (libm)
+See `examples/` directory:
+- `hello.ll` — Hello world, variables, math, lists
+- `fib.ll` — Recursive Fibonacci
+- `fizzbuzz.ll` — FizzBuzz with `for` and `cond`
+- `php-interop.ll` — Standard library demo (replaces old PHP interop)
+- `list-ports.ll` — System command output with `shell->string`
+- `async.ll` — `future`, `await`, `co` async programming
+- `http-server.ll` — HTTP server example
+- `pdo.ll` — PDO database (SQLite) example
+- `ws.ll` — WebSocket server & client example
+- `js-encode.ll` — LL-to-JS transpiler example
+- `cgo.ll` — CGO FFI (libm) example
