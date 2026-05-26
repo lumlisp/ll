@@ -1143,4 +1143,29 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("http/response-status", &Primitive{Name: "http/response-status", Fn: e.builtinHttpResponseStatus})
 	e.env.Set("http/response-headers", &Primitive{Name: "http/response-headers", Fn: e.builtinHttpResponseHeaders})
 	e.env.Set("http/response-body", &Primitive{Name: "http/response-body", Fn: e.builtinHttpResponseBody})
+
+	// PDO
+	e.env.Set("pdo/open", &Primitive{Name: "pdo/open", Fn: e.builtinPdoOpen})
+	e.env.Set("pdo/exec", &Primitive{Name: "pdo/exec", Fn: e.builtinPdoExec})
+	e.env.Set("pdo/query", &Primitive{Name: "pdo/query", Fn: e.builtinPdoQuery})
+	e.env.Set("pdo/close", &Primitive{Name: "pdo/close", Fn: e.builtinPdoClose})
+
+	// WebSocket
+	e.env.Set("ws/create-server", &Primitive{Name: "ws/create-server", Fn: e.builtinWsCreateServer})
+	e.env.Set("ws/set-handler", &Primitive{Name: "ws/set-handler", Fn: e.builtinWsSetHandler})
+	e.env.Set("ws/start-server", &Primitive{Name: "ws/start-server", Fn: e.builtinWsStartServer})
+	e.env.Set("ws/connect", &Primitive{Name: "ws/connect", Fn: e.builtinWsConnect})
+	e.env.Set("ws/send", &Primitive{Name: "ws/send", Fn: e.builtinWsSend})
+	e.env.Set("ws/receive", &Primitive{Name: "ws/receive", Fn: e.builtinWsReceive})
+	e.env.Set("ws/close", &Primitive{Name: "ws/close", Fn: e.builtinWsClose})
+
+	// JS encode
+	e.env.Set("js/encode-string", &Primitive{Name: "js/encode-string", Fn: e.builtinJsEncodeString})
+	e.env.Set("js/encode-file", &Primitive{Name: "js/encode-file", Fn: e.builtinJsEncodeFile})
+
+	// CGO
+	e.env.Set("cgo/open", &Primitive{Name: "cgo/open", Fn: e.builtinCgoOpen})
+	e.env.Set("cgo/func", &Primitive{Name: "cgo/func", Fn: e.builtinCgoFunc})
+	e.env.Set("cgo/call", &Primitive{Name: "cgo/call", Fn: e.builtinCgoCall})
+	e.env.Set("cgo/close", &Primitive{Name: "cgo/close", Fn: e.builtinCgoClose})
 }

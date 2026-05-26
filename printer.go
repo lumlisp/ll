@@ -49,6 +49,14 @@ func Display(w io.Writer, v Value) {
 		fmt.Fprint(w, "#<function>")
 	case *Future:
 		fmt.Fprint(w, "#<future>")
+	case *PdoConnection:
+		fmt.Fprint(w, "#<pdo-connection>")
+	case *WsServer:
+		fmt.Fprintf(w, "#<ws-server %s:%d>", val.Host, val.Port)
+	case *WsConn:
+		fmt.Fprint(w, "#<ws-conn>")
+	case *CgoLib:
+		fmt.Fprintf(w, "#<cgo-lib:%s>", val.Name)
 	default:
 		fmt.Fprint(w, v.String())
 	}
@@ -116,6 +124,14 @@ func mustSprint(v Value) string {
 		return "#<function>"
 	case *Future:
 		return "#<future>"
+	case *PdoConnection:
+		return "#<pdo-connection>"
+	case *WsServer:
+		return fmt.Sprintf("#<ws-server %s:%d>", val.Host, val.Port)
+	case *WsConn:
+		return "#<ws-conn>"
+	case *CgoLib:
+		return fmt.Sprintf("#<cgo-lib:%s>", val.Name)
 	default:
 		return fmt.Sprintf("%v", v)
 	}

@@ -52,12 +52,12 @@ echo "=== test-a-ll: Lum Lisp Test Runner ==="
 echo ""
 
 echo "Build"
-step "go build" go build -o "$ROOT/ll" "$ROOT"
+step "make build" make -C "$ROOT" build
 LL="$ROOT/ll"
 
 echo ""
 echo "Unit tests"
-step "go test" go test "$ROOT"
+step "make test" make -C "$ROOT" test
 
 echo ""
 echo "Examples"

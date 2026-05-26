@@ -1,4 +1,4 @@
-; PHP interop has been removed in the Go version.
+; PHP interop has been removed.
 ; Instead, use the built-in standard library:
 (println "=== Built-in Library Examples ===")
 

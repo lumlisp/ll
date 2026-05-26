@@ -1,8 +1,11 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/gorilla/websocket"
 )
 
 type Value interface {
@@ -249,6 +252,37 @@ type HttpResponse struct {
 
 func (*HttpResponse) isValue()         {}
 func (r *HttpResponse) String() string { return fmt.Sprintf("#<http-response %d>", r.Status) }
+
+type PdoConnection struct {
+	DB *sql.DB
+}
+
+func (*PdoConnection) isValue()         {}
+func (p *PdoConnection) String() string { return "#<pdo-connection>" }
+
+type WsServer struct {
+	Host    string
+	Port    int
+	Handler Value
+	upgrader websocket.Upgrader
+}
+
+func (*WsServer) isValue()         {}
+func (s *WsServer) String() string { return fmt.Sprintf("#<ws-server %s:%d>", s.Host, s.Port) }
+
+type WsConn struct {
+	Conn *websocket.Conn
+}
+
+func (*WsConn) isValue()         {}
+func (c *WsConn) String() string { return "#<ws-conn>" }
+
+type CgoLib struct {
+	Name string
+}
+
+func (*CgoLib) isValue()         {}
+func (c *CgoLib) String() string { return fmt.Sprintf("#<cgo-lib:%s>", c.Name) }
 
 func IsTruthy(v Value) bool {
 	switch val := v.(type) {

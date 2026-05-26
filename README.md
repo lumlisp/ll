@@ -1,9 +1,9 @@
 # Lum Lisp
 
-A Lisp dialect implemented in Go.
+A Lisp dialect.
 
 ```
-go build -o ll .
+make build
 ./ll                      # REPL
 ./ll file.ll [args...]    # run file with arguments
 ./ll -h, --help           # usage
@@ -14,7 +14,7 @@ go build -o ll .
 ## Quick start
 
 ```sh
-go build -o ll .
+make build
 ./ll examples/hello.ll
 ```
 
@@ -125,6 +125,6 @@ See [docs/reference.md](docs/reference.md) for full language reference.
 ## Testing
 
 ```sh
-go test ./...      # unit tests
+make test          # unit tests (go test ./...)
 ./test-a-ll        # full test suite (unit tests + examples)
 ```

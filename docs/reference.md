@@ -2,13 +2,13 @@
 
 ## Overview
 
-Lum Lisp is a Lisp dialect implemented in Go. It features lexical scoping,
+Lum Lisp is a Lisp dialect. It features lexical scoping,
 first-class closures, vectors, macros, and a comprehensive standard library.
 
 ## Running
 
 ```sh
-go build -o ll .
+make build
 ./ll                   # REPL
 ./ll file.ll [args...] # run file with arguments
 ./ll -h, --help        # usage info
@@ -144,7 +144,7 @@ Paths are relative to the current file's directory. Also supports directory modu
 ```
 (future expr ...)
 ```
-Evaluates body expressions in a new goroutine and returns a `Future` value.
+Evaluates body expressions concurrently and returns a `Future` value.
 Use `await` to retrieve the result.
 
 ```scheme
@@ -167,7 +167,7 @@ computation raised an error, `await` re-throws it.
 ```
 (co (params ...) body ...)
 ```
-Creates an **async closure** — like `lambda`, but calling it spawns a goroutine
+Creates an **async closure** — like `lambda`, but calling it runs concurrently
 and returns a `Future` instead of running synchronously.
 
 ```scheme
@@ -402,7 +402,7 @@ Module resolution order for each path:
 
 ### HTTP Server
 
-Built-in HTTP server backed by Go's `net/http`. Handlers receive a request object
+Built-in HTTP server backed by the standard HTTP library. Handlers receive a request object
 and must return a response created with `http/make-response`.
 
 | Function | Description |
@@ -464,13 +464,116 @@ and must return a response created with `http/make-response`.
 | `(exit)` | Exit with code 0 |
 | `(exit n)` | Exit with code n |
 
-## Examples
+### JSON
 
-See `examples/` directory:
-- `hello.ll` — Hello world, variables, math, lists
-- `fib.ll` — Recursive Fibonacci
-- `fizzbuzz.ll` — FizzBuzz with `for` and `cond`
-- `php-interop.ll` — Standard library demo (replaces old PHP interop)
-- `list-ports.ll` — System command output with `shell->string`
-- `async.ll` — `future`, `await`, `co` async programming
-- `http-server.ll` — HTTP server example
+| Функция | Описание |
+|---------|----------|
+| `(json/encode val)` | Преобразует значение LL в JSON-строку |
+| `(json/decode str)` | Разбирает JSON-строку в значение LL |
+
+```scheme
+(json/encode '(1 2 3))                      ; => "[1,2,3]"
+(json/encode '((name . "LL") (year . 2024))) ; => "{\"name\":\"LL\",\"year\":2024}"
+(json/decode "{\"x\":1,\"y\":2}")            ; => ((x . 1) (y . 2))
+```
+
+### PDO — База данных
+
+| Функция | Описание |
+|---------|----------|
+| `(pdo/open dsn user password)` | Открывает соединение с БД (возвращает объект соединения или `()` при ошибке) |
+| `(pdo/exec conn sql . params)` | Выполняет INSERT/UPDATE/DELETE, возвращает количество затронутых строк |
+| `(pdo/query conn sql . params)` | Выполняет SELECT, возвращает строки как список ассоциативных списков `((колонка . значение) ...)` |
+| `(pdo/close conn)` | Закрывает соединение |
+
+Поддерживаемые префиксы DSN:
+- `sqlite:filename.db` — SQLite (встраиваемый)
+- `mysql:user:pass@tcp(host:port)/dbname` — MySQL
+- `postgres:host=... dbname=...` — PostgreSQL
+
+Параметризованные запросы через `?`:
+
+```scheme
+(define db (pdo/open "sqlite:test.db" "" ""))
+(pdo/exec db "CREATE TABLE IF NOT EXISTS users (id INTEGER, name TEXT)")
+(pdo/exec db "INSERT INTO users (id, name) VALUES (?, ?)" 1 "Alice")
+(define rows (pdo/query db "SELECT * FROM users WHERE id = ?" 1))
+(pdo/close db)
+```
+
+### WebSocket
+
+| Функция | Описание |
+|---------|----------|
+| `(ws/create-server host port)` | Создаёт WebSocket-сервер (возвращает объект сервера) |
+| `(ws/set-handler server handler)` | Устанавливает обработчик подключений (функция с одним аргументом — соединением) |
+| `(ws/start-server server)` | Запускает сервер (возвращает Future, не блокирует) |
+| `(ws/connect url)` | Подключается к WebSocket-серверу (возвращает соединение или `()` при ошибке) |
+| `(ws/send conn msg)` | Отправляет текстовое сообщение |
+| `(ws/receive conn)` | Получает текстовое сообщение (блокирует) |
+| `(ws/close conn)` | Закрывает соединение |
+
+```scheme
+;; Сервер
+(define server (ws/create-server "localhost" 8080))
+(ws/set-handler server (lambda (conn)
+  (define msg (ws/receive conn))
+  (ws/send conn (string-append "echo: " msg))))
+(ws/start-server server)
+
+;; Клиент
+(define conn (ws/connect "ws://localhost:8080"))
+(ws/send conn "hello")
+(println (ws/receive conn))  ; => "echo: hello"
+(ws/close conn)
+```
+
+### js/encode — Транспилятор LL → JavaScript
+
+| Функция | Описание |
+|---------|----------|
+| `(js/encode-string expr)` | Преобразует выражение LL в JavaScript-строку |
+| `(js/encode-file path expr)` | Преобразует выражение LL в JavaScript и записывает в файл |
+
+Поддерживаемые формы LL: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, арифметика, сравнения, строки, векторы, async (`future`, `co`, `await`), операции со списками (`car`, `cdr`, `cons`, `list`), `while`, `for`, `display`, `println`.
+
+```scheme
+(js/encode-string '(define (fib n)
+  (if (< n 2) n
+    (+ (fib (- n 1)) (fib (- n 2))))))
+;; => "function fib(n) { if (n < 2) { return n; } else { return fib(n - 1) + fib(n - 2); } }"
+```
+
+### CGO/FFI — Привязка C-библиотек
+
+| Функция | Описание |
+|---------|----------|
+| `(cgo/open path)` | Загружает shared library (возвращает объект библиотеки или `()` при ошибке) |
+| `(cgo/func lib name)` | Находит функцию в библиотеке (регистрирует для вызова) |
+| `(cgo/call lib name args...)` | Вызывает зарегистрированную функцию (до 6 целочисленных/указательных аргументов) |
+| `(cgo/close lib)` | Выгружает библиотеку |
+
+Требует `CGO_ENABLED=1` при сборке. При `CGO_ENABLED=0` все функции возвращают ошибку.
+
+```scheme
+(define lib (cgo/open "libm.so.6"))
+(cgo/func lib "sqrt")
+(define result (cgo/call lib "sqrt" 144))
+(println "sqrt(144) =" result)   ; => sqrt(144) = 12
+(cgo/close lib)
+```
+
+## Примеры
+
+Смотрите директорию `examples/`:
+- `hello.ll` — Hello world, переменные, математика, списки
+- `fib.ll` — Рекурсивный Фибоначчи
+- `fizzbuzz.ll` — FizzBuzz с `for` и `cond`
+- `php-interop.ll` — Демо стандартной библиотеки (замена старого PHP interop)
+- `list-ports.ll` — Вывод системной команды через `shell->string`
+- `async.ll` — `future`, `await`, `co` асинхронное программирование
+- `http-server.ll` — Пример HTTP-сервера
+- `pdo.ll` — Пример PDO (SQLite)
+- `ws.ll` — Пример WebSocket сервера и клиента
+- `js-encode.ll` — Пример транспилятора LL→JS
+- `cgo.ll` — Пример CGO FFI (libm)
