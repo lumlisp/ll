@@ -1993,6 +1993,8 @@ func TestJsEncodeFileOopDom(t *testing.T) {
 (string->file "output.txt" data)
 (define exists? (file-exists? "test.txt"))
 (delete-file "tmp.txt")
+(define files (list-directory "."))
+(make-directory "newdir")
 
 (defclass Shape () ((x 0) (y 0)))
 
@@ -2020,6 +2022,22 @@ func TestJsEncodeFileOopDom(t *testing.T) {
 (dom/add-class! btn 'primary)
 (dom/set-attr! btn 'data-id "123")
 (dom/on btn 'click (lambda () (println "hi")))
+
+(define items (dom/qa ".item"))
+(define heading (dom/q "h1"))
+(dom/prepend el heading)
+(dom/html el)
+(dom/set-html! el "<p>hi</p>")
+(dom/val el)
+(dom/set-val! el "text")
+(dom/attr btn 'class)
+(dom/remove-attr! btn 'disabled)
+(dom/remove-class! btn 'secondary)
+(dom/toggle-class! btn 'active)
+(dom/has-class? btn 'active)
+(dom/off btn 'click handler)
+(dom/css btn 'color)
+(dom/set-css! btn 'color "red")
 `
 
 	llPath := dir + "/test.ll"
@@ -2048,6 +2066,8 @@ func TestJsEncodeFileOopDom(t *testing.T) {
 		{"string->file", `require("fs").writeFileSync("output.txt", data)`},
 		{"file-exists?", `require("fs").existsSync("test.txt")`},
 		{"delete-file", `require("fs").unlinkSync("tmp.txt")`},
+		{"list-directory", `require("fs").readdirSync(".")`},
+		{"make-directory", `require("fs").mkdirSync("newdir", { recursive: true })`},
 		{"defclass Shape", "class Shape {"},
 		{"constructor with defaults", "constructor(x = 0, y = 0)"},
 		{"this.x assignment", "this.x = x;"},
@@ -2065,6 +2085,21 @@ func TestJsEncodeFileOopDom(t *testing.T) {
 		{"dom/add-class! with quoted sym", `btn.classList.add("primary")`},
 		{"dom/set-attr! with quoted sym", `btn.setAttribute("data-id", "123")`},
 		{"dom/on with quoted event", `btn.addEventListener("click", `},
+		{"dom/qa", `document.querySelectorAll(".item")`},
+		{"dom/q", `document.querySelector("h1")`},
+		{"dom/prepend", "el.prepend(heading)"},
+		{"dom/html", "el.innerHTML"},
+		{"dom/set-html!", "el.innerHTML = "},
+		{"dom/val", "el.value"},
+		{"dom/set-val!", `el.value = "text"`},
+		{"dom/attr with quoted sym", `btn.getAttribute("class")`},
+		{"dom/remove-attr! with quoted sym", `btn.removeAttribute("disabled")`},
+		{"dom/remove-class! with quoted sym", `btn.classList.remove("secondary")`},
+		{"dom/toggle-class! with quoted sym", `btn.classList.toggle("active")`},
+		{"dom/has-class? with quoted sym", `btn.classList.contains("active")`},
+		{"dom/off with quoted event", `btn.removeEventListener("click", handler)`},
+		{"dom/css with quoted sym", `btn.style["color"]`},
+		{"dom/set-css! with quoted sym", `btn.style["color"] = "red"`},
 	}
 
 	for _, c := range checks {

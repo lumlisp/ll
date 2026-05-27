@@ -1368,6 +1368,40 @@ func (e *Eval) builtinDeleteFile(args []Value) (Value, error) {
 	return Nil, nil
 }
 
+func (e *Eval) builtinListDirectory(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("list-directory requires 1 argument")
+	}
+	name, ok := args[0].(String)
+	if !ok {
+		return nil, fmt.Errorf("list-directory requires string argument")
+	}
+	entries, err := os.ReadDir(string(name))
+	if err != nil {
+		return nil, err
+	}
+	var result []Value
+	for _, entry := range entries {
+		result = append(result, String(entry.Name()))
+	}
+	return SliceToList(result), nil
+}
+
+func (e *Eval) builtinMakeDirectory(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("make-directory requires 1 argument")
+	}
+	name, ok := args[0].(String)
+	if !ok {
+		return nil, fmt.Errorf("make-directory requires string argument")
+	}
+	err := os.MkdirAll(string(name), 0755)
+	if err != nil {
+		return nil, err
+	}
+	return Nil, nil
+}
+
 func (e *Eval) builtinSleep(args []Value) (Value, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("sleep requires 1 argument")

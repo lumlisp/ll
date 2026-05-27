@@ -1160,6 +1160,26 @@ func transpileCons(c *Cons) (string, error) {
 		}
 		return `require("fs").unlinkSync(` + args[0] + `)`, nil
 
+	case "list-directory":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("list-directory: requires 1 argument (path)")
+		}
+		return `require("fs").readdirSync(` + args[0] + `)`, nil
+
+	case "make-directory":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("make-directory: requires 1 argument (path)")
+		}
+		return `require("fs").mkdirSync(` + args[0] + `, { recursive: true })`, nil
+
 	// --- DOM operations ---
 	case "dom/q":
 		args, err := transpileArgs(c.Cdr)

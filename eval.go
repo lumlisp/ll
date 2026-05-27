@@ -1098,6 +1098,8 @@ func (e *Eval) initBuiltins() {
 	e.env.Set("string->file", &Primitive{Name: "string->file", Fn: e.builtinStringToFile})
 	e.env.Set("file-exists?", &Primitive{Name: "file-exists?", Fn: e.builtinFileExists})
 	e.env.Set("delete-file", &Primitive{Name: "delete-file", Fn: e.builtinDeleteFile})
+	e.env.Set("list-directory", &Primitive{Name: "list-directory", Fn: e.builtinListDirectory})
+	e.env.Set("make-directory", &Primitive{Name: "make-directory", Fn: e.builtinMakeDirectory})
 
 	e.env.Set("vector", &Primitive{Name: "vector", Fn: e.builtinVector})
 	e.env.Set("make-vector", &Primitive{Name: "make-vector", Fn: e.builtinMakeVector})
