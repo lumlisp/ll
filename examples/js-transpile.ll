@@ -27,6 +27,14 @@
 (string->file \"output.txt\" content)
 (file-exists? \"test.txt\")
 (delete-file \"tmp.txt\")
+(list-directory \".\")
+(make-directory \"newdir\")
+"))
+
+(println "=== JSON Transpilation ===")
+(println (js/encode-string "
+(json/encode (list 1 2 3))
+(json/decode \"[1,2,3]\")
 "))
 
 (println "=== Import Fallback (js/encode-string) ===")

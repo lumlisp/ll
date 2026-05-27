@@ -1995,6 +1995,8 @@ func TestJsEncodeFileOopDom(t *testing.T) {
 (delete-file "tmp.txt")
 (define files (list-directory "."))
 (make-directory "newdir")
+(json/encode (list 1 2 3))
+(json/decode "[1,2,3]")
 
 (defclass Shape () ((x 0) (y 0)))
 
@@ -2068,6 +2070,8 @@ func TestJsEncodeFileOopDom(t *testing.T) {
 		{"delete-file", `require("fs").unlinkSync("tmp.txt")`},
 		{"list-directory", `require("fs").readdirSync(".")`},
 		{"make-directory", `require("fs").mkdirSync("newdir", { recursive: true })`},
+		{"json/encode", `JSON.stringify([1, 2, 3])`},
+		{"json/decode", `JSON.parse("[1,2,3]")`},
 		{"defclass Shape", "class Shape {"},
 		{"constructor with defaults", "constructor(x = 0, y = 0)"},
 		{"this.x assignment", "this.x = x;"},

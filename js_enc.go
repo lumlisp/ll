@@ -1160,6 +1160,26 @@ func transpileCons(c *Cons) (string, error) {
 		}
 		return `require("fs").unlinkSync(` + args[0] + `)`, nil
 
+	case "json/encode":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("json/encode: requires 1 argument")
+		}
+		return "JSON.stringify(" + args[0] + ")", nil
+
+	case "json/decode":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("json/decode: requires 1 argument")
+		}
+		return "JSON.parse(" + args[0] + ")", nil
+
 	case "list-directory":
 		args, err := transpileArgs(c.Cdr)
 		if err != nil {
