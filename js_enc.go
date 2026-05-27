@@ -55,9 +55,15 @@ func (e *Eval) builtinJsEncodeFile(args []Value) (Value, error) {
 		return nil, fmt.Errorf("js/encode-file: %v", err)
 	}
 
-	// Expand require/include directives
+	// Get module search paths from LL runtime
+	var modulePaths []string
+	if mpVal, err := e.env.Get("*module-paths*"); err == nil {
+		modulePaths = listToStrings(mpVal)
+	}
+
+	// Expand require/include/import directives
 	included := make(map[string]bool)
-	ast, err = expandRequires(ast, string(path), included)
+	ast, err = expandRequires(ast, string(path), included, modulePaths)
 	if err != nil {
 		return nil, fmt.Errorf("js/encode-file: %v", err)
 	}
@@ -70,12 +76,27 @@ func (e *Eval) builtinJsEncodeFile(args []Value) (Value, error) {
 	return String(js), nil
 }
 
-// expandRequires walks the AST and replaces (require "file") and (include "file")
-// forms with the parsed and expanded contents of the referenced file.
-func expandRequires(ast []Value, basePath string, included map[string]bool) ([]Value, error) {
+func listToStrings(v Value) []string {
+	var result []string
+	for v != Nil {
+		cons, ok := v.(*Cons)
+		if !ok {
+			break
+		}
+		if s, ok := cons.Car.(String); ok {
+			result = append(result, string(s))
+		}
+		v = cons.Cdr
+	}
+	return result
+}
+
+// expandRequires walks the AST and replaces (require "file"), (include "file"),
+// and (import "module") forms with the parsed and expanded contents of the referenced file.
+func expandRequires(ast []Value, basePath string, included map[string]bool, modulePaths []string) ([]Value, error) {
 	var result []Value
 	for _, expr := range ast {
-		expanded, err := expandExprRequire(expr, basePath, included)
+		expanded, err := expandExprRequire(expr, basePath, included, modulePaths)
 		if err != nil {
 			return nil, err
 		}
@@ -84,9 +105,9 @@ func expandRequires(ast []Value, basePath string, included map[string]bool) ([]V
 	return result, nil
 }
 
-// expandExprRequire expands a single expression, replacing require/include forms
+// expandExprRequire expands a single expression, replacing require/include/import forms
 // with the contents of the referenced file.
-func expandExprRequire(v Value, basePath string, included map[string]bool) ([]Value, error) {
+func expandExprRequire(v Value, basePath string, included map[string]bool, modulePaths []string) ([]Value, error) {
 	cons, ok := v.(*Cons)
 	if !ok {
 		return []Value{v}, nil
@@ -95,21 +116,31 @@ func expandExprRequire(v Value, basePath string, included map[string]bool) ([]Va
 	if !ok {
 		return []Value{v}, nil
 	}
-	if sym.Name != "require" && sym.Name != "include" {
+
+	if sym.Name != "require" && sym.Name != "include" && sym.Name != "import" {
 		return []Value{v}, nil
 	}
 
 	args := cons.Cdr
 	argCons, ok := args.(*Cons)
 	if !ok {
-		return nil, fmt.Errorf("require: filename required")
+		return nil, fmt.Errorf("%s: argument required", sym.Name)
 	}
 	filename, ok := argCons.Car.(String)
 	if !ok {
-		return nil, fmt.Errorf("require: filename must be a string")
+		return nil, fmt.Errorf("%s: argument must be a string", sym.Name)
 	}
 
-	resolvedPath := resolvePath(basePath, string(filename))
+	var resolvedPath string
+	if sym.Name == "import" {
+		resolvedPath = findModuleFile(string(filename), basePath, modulePaths)
+	} else {
+		resolvedPath = resolvePath(basePath, string(filename))
+	}
+
+	if resolvedPath == "" {
+		return nil, fmt.Errorf("%s: module not found: %s", sym.Name, string(filename))
+	}
 
 	// Prevent circular includes
 	if included[resolvedPath] {
@@ -119,7 +150,7 @@ func expandExprRequire(v Value, basePath string, included map[string]bool) ([]Va
 
 	content, err := readFileString(resolvedPath)
 	if err != nil {
-		return nil, fmt.Errorf("require: %v", err)
+		return nil, fmt.Errorf("%s: %v", sym.Name, err)
 	}
 
 	// Parse the included file
@@ -127,15 +158,58 @@ func expandExprRequire(v Value, basePath string, included map[string]bool) ([]Va
 	par := &Parser{}
 	tokens, err := lex.Tokenize(content)
 	if err != nil {
-		return nil, fmt.Errorf("require: %v", err)
+		return nil, fmt.Errorf("%s: %v", sym.Name, err)
 	}
 	subAst, err := par.Parse(tokens)
 	if err != nil {
-		return nil, fmt.Errorf("require: %v", err)
+		return nil, fmt.Errorf("%s: %v", sym.Name, err)
 	}
 
-	// Recursively expand
-	return expandRequires(subAst, resolvedPath, included)
+	// Recursively expand (pass modulePaths for nested imports)
+	return expandRequires(subAst, resolvedPath, included, modulePaths)
+}
+
+func findModuleFile(name, basePath string, modulePaths []string) string {
+	// Try relative to the current file's directory
+	if basePath != "" {
+		dir := filepath.Dir(basePath)
+		candidates := []string{
+			filepath.Join(dir, name+".ll"),
+			filepath.Join(dir, name, "main.ll"),
+		}
+		for _, p := range candidates {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
+	// Try current working directory
+	candidates := []string{
+		name + ".ll",
+		name + "/main.ll",
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			abs, _ := filepath.Abs(p)
+			return abs
+		}
+	}
+
+	// Try module paths from LL runtime
+	for _, mp := range modulePaths {
+		candidates := []string{
+			filepath.Join(mp, name+".ll"),
+			filepath.Join(mp, name, "main.ll"),
+		}
+		for _, p := range candidates {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
+	return ""
 }
 
 func resolvePath(basePath, target string) string {
@@ -1033,6 +1107,300 @@ func transpileCons(c *Cons) (string, error) {
 		}
 		return "// require " + args[0], nil
 
+	case "import":
+		// Fallback for js/encode-string (no file resolution):
+		// wraps the path in JS require().
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) == 0 {
+			return "", fmt.Errorf("import: path required")
+		}
+		return "require(" + args[0] + ")", nil
+
+	// --- Filesystem operations (Node.js) ---
+	case "file->string":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("file->string: requires 1 argument (path)")
+		}
+		return `require("fs").readFileSync(` + args[0] + `, "utf8")`, nil
+
+	case "string->file":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("string->file: requires 2 arguments (path content)")
+		}
+		return `require("fs").writeFileSync(` + args[0] + `, ` + args[1] + `)`, nil
+
+	case "file-exists?":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("file-exists?: requires 1 argument (path)")
+		}
+		return `require("fs").existsSync(` + args[0] + `)`, nil
+
+	case "delete-file":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("delete-file: requires 1 argument (path)")
+		}
+		return `require("fs").unlinkSync(` + args[0] + `)`, nil
+
+	// --- DOM operations ---
+	case "dom/q":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/q: requires 1 argument (selector)")
+		}
+		return "document.querySelector(" + args[0] + ")", nil
+
+	case "dom/qa":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/qa: requires 1 argument (selector)")
+		}
+		return "document.querySelectorAll(" + args[0] + ")", nil
+
+	case "dom/id":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/id: requires 1 argument (id)")
+		}
+		return "document.getElementById(" + args[0] + ")", nil
+
+	case "dom/create":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/create: requires 1 argument (tag)")
+		}
+		return "document.createElement(" + args[0] + ")", nil
+
+	case "dom/append":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/append: requires 2 arguments (parent child)")
+		}
+		return args[0] + ".appendChild(" + args[1] + ")", nil
+
+	case "dom/prepend":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/prepend: requires 2 arguments (parent child)")
+		}
+		return args[0] + ".prepend(" + args[1] + ")", nil
+
+	case "dom/remove":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/remove: requires 1 argument (node)")
+		}
+		return args[0] + ".remove()", nil
+
+	case "dom/text":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/text: requires 1 argument (node)")
+		}
+		return args[0] + ".textContent", nil
+
+	case "dom/set-text!":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/set-text!: requires 2 arguments (node text)")
+		}
+		return args[0] + ".textContent = " + args[1] + ";", nil
+
+	case "dom/html":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/html: requires 1 argument (node)")
+		}
+		return args[0] + ".innerHTML", nil
+
+	case "dom/set-html!":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/set-html!: requires 2 arguments (node html)")
+		}
+		return args[0] + ".innerHTML = " + args[1] + ";", nil
+
+	case "dom/val":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 1 {
+			return "", fmt.Errorf("dom/val: requires 1 argument (node)")
+		}
+		return args[0] + ".value", nil
+
+	case "dom/set-val!":
+		args, err := transpileArgs(c.Cdr)
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/set-val!: requires 2 arguments (node val)")
+		}
+		return args[0] + ".value = " + args[1] + ";", nil
+
+	case "dom/attr":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node name")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/attr: requires 2 arguments (node name)")
+		}
+		return args[0] + ".getAttribute(" + args[1] + ")", nil
+
+	case "dom/set-attr!":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node name value")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 3 {
+			return "", fmt.Errorf("dom/set-attr!: requires 3 arguments (node name value)")
+		}
+		return args[0] + ".setAttribute(" + args[1] + ", " + args[2] + ");", nil
+
+	case "dom/remove-attr!":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node name")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/remove-attr!: requires 2 arguments (node name)")
+		}
+		return args[0] + ".removeAttribute(" + args[1] + ");", nil
+
+	case "dom/add-class!":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node class")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/add-class!: requires 2 arguments (node class)")
+		}
+		return args[0] + ".classList.add(" + args[1] + ")", nil
+
+	case "dom/remove-class!":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node class")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/remove-class!: requires 2 arguments (node class)")
+		}
+		return args[0] + ".classList.remove(" + args[1] + ")", nil
+
+	case "dom/toggle-class!":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node class")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/toggle-class!: requires 2 arguments (node class)")
+		}
+		return args[0] + ".classList.toggle(" + args[1] + ")", nil
+
+	case "dom/has-class?":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node class")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/has-class?: requires 2 arguments (node class)")
+		}
+		return args[0] + ".classList.contains(" + args[1] + ")", nil
+
+	case "dom/on":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node event handler")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 3 {
+			return "", fmt.Errorf("dom/on: requires 3 arguments (node event handler)")
+		}
+		return args[0] + ".addEventListener(" + args[1] + ", " + args[2] + ")", nil
+
+	case "dom/off":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node event handler")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 3 {
+			return "", fmt.Errorf("dom/off: requires 3 arguments (node event handler)")
+		}
+		return args[0] + ".removeEventListener(" + args[1] + ", " + args[2] + ")", nil
+
+	case "dom/css":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node prop")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 2 {
+			return "", fmt.Errorf("dom/css: requires 2 arguments (node prop)")
+		}
+		return args[0] + ".style[" + args[1] + "]", nil
+
+	case "dom/set-css!":
+		args, err := transpileDOMAttrArgs(c.Cdr, "node prop val")
+		if err != nil {
+			return "", err
+		}
+		if len(args) != 3 {
+			return "", fmt.Errorf("dom/set-css!: requires 3 arguments (node prop val)")
+		}
+		return args[0] + ".style[" + args[1] + "] = " + args[2] + ";", nil
+
 	default:
 		// Regular function call
 		args, err := transpileArgs(c.Cdr)
@@ -1259,6 +1627,34 @@ func transpileArgs(v Value) ([]string, error) {
 		cons, ok := v.(*Cons)
 		if !ok {
 			break
+		}
+		s, err := transpileExpr(cons.Car, true)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+		v = cons.Cdr
+	}
+	return result, nil
+}
+
+func transpileDOMAttrArgs(v Value, desc string) ([]string, error) {
+	var result []string
+	for v != Nil {
+		cons, ok := v.(*Cons)
+		if !ok {
+			break
+		}
+		if argCons, ok := cons.Car.(*Cons); ok {
+			if sym, ok := argCons.Car.(*Sym); ok && sym.Name == "quote" {
+				if nameCons, ok := argCons.Cdr.(*Cons); ok && nameCons.Cdr == Nil {
+					if nameSym, ok := nameCons.Car.(*Sym); ok {
+						result = append(result, fmt.Sprintf("%q", nameSym.Name))
+						v = cons.Cdr
+						continue
+					}
+				}
+			}
 		}
 		s, err := transpileExpr(cons.Car, true)
 		if err != nil {

@@ -1976,3 +1976,102 @@ func TestJsEncodeFileRequireCircular(t *testing.T) {
 	}
 }
 
+func TestJsEncodeFileOopDom(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a module file that will be imported
+	helperPath := dir + "/helper.ll"
+	err := os.WriteFile(helperPath, []byte("(define greeting \"hello from module\")\n"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	llCode := `; OOP + DOM + FS + import end-to-end test
+(import "helper")
+
+(define data (file->string "input.txt"))
+(string->file "output.txt" data)
+(define exists? (file-exists? "test.txt"))
+(delete-file "tmp.txt")
+
+(defclass Shape () ((x 0) (y 0)))
+
+(defmethod Shape area (self)
+  0)
+
+(defmethod Shape move (self dx dy)
+  ($= x (+ ($ x) dx))
+  ($= y (+ ($ y) dy))
+  self)
+
+(define r (new Rectangle 'x 10 'y 20))
+(. r move 1 2)
+(send r 'area)
+(slot-ref r 'x)
+(slot-set! r 'x 5)
+
+(instance? r)
+(class-of r)
+
+(define el (dom/id "app"))
+(define btn (dom/create "button"))
+(dom/append el btn)
+(dom/set-text! btn "Click me")
+(dom/add-class! btn 'primary)
+(dom/set-attr! btn 'data-id "123")
+(dom/on btn 'click (lambda () (println "hi")))
+`
+
+	llPath := dir + "/test.ll"
+	if err := os.WriteFile(llPath, []byte(llCode), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	e := NewEval()
+	input := `(js/encode-file "` + llPath + `")`
+	got, err := evalStringResult(t, e, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := got.(String)
+	if !ok {
+		t.Fatalf("expected String, got %T", got)
+	}
+	js := string(s)
+
+	checks := []struct {
+		name string
+		want string
+	}{
+		{"import inlines module", `let greeting = "hello from module";`},
+		{"file->string", `require("fs").readFileSync("input.txt"`},
+		{"string->file", `require("fs").writeFileSync("output.txt", data)`},
+		{"file-exists?", `require("fs").existsSync("test.txt")`},
+		{"delete-file", `require("fs").unlinkSync("tmp.txt")`},
+		{"defclass Shape", "class Shape {"},
+		{"constructor with defaults", "constructor(x = 0, y = 0)"},
+		{"this.x assignment", "this.x = x;"},
+		{"defmethod move params", "Shape.prototype.move = function(self, dx, dy)"},
+		{"$=", "self.x ="},
+		{"new with keywords", "new Rectangle({x: 10, y: 20})"},
+		{". (dot) method call", "r.move(1, 2)"},
+		{"send", "r.area()"},
+		{"slot-ref", "r.x"},
+		{"slot-set!", "r.x = 5;"},
+		{"dom/id", `document.getElementById("app")`},
+		{"dom/create", `document.createElement("button")`},
+		{"dom/append", "el.appendChild(btn)"},
+		{"dom/set-text!", ".textContent = "},
+		{"dom/add-class! with quoted sym", `btn.classList.add("primary")`},
+		{"dom/set-attr! with quoted sym", `btn.setAttribute("data-id", "123")`},
+		{"dom/on with quoted event", `btn.addEventListener("click", `},
+	}
+
+	for _, c := range checks {
+		if !strings.Contains(js, c.want) {
+			t.Errorf("missing %s: expected to find %q in output", c.name, c.want)
+		}
+	}
+	t.Logf("JS output:\n%s", js)
+}
+
