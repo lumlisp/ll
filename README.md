@@ -40,11 +40,11 @@ Full reference in [docs/reference.md](docs/reference.md). Highlights:
 | Arithmetic | `+` `-` `*` `/` `%` `abs` `min` `max` `expt` `sqrt` `quotient` `remainder` `floor` `ceil` `round` `inc` `dec` |
 | Comparisons | `=` `>` `<` `>=` `<=` |
 | Lists | `car` `cdr` `cons` `list` `length` `append` `reverse` `list-ref` `list-tail` `take` `drop` `range` `member` `assoc` `map` `filter` `foldl` `foldr` |
-| Vectors | `vector` `make-vector` `vector-ref` `vector-set!` `vector-length` `vector-fill!` `vector-map` `vector->list` `list->vector` |
+| Vectors | `vector` `make-vector` `vector-ref` `vector-set!` `vector-length` `vector?` `vector-fill!` `vector-map` `vector->list` `list->vector` |
 | Strings | `string-length` `string-ref` `substring` `string-append` `string=?` `string-ci=?` `string<?` `string>?` `string-downcase` `string-upcase` `string-trim` `string-split` `string-join` |
 | Conversion | `number->string` `string->number` `symbol->string` `string->symbol` |
 | I/O | `display` `write` `print` `println` `newline` `read-line` |
-| File | `file->string` `string->file` `file-exists?` `delete-file` |
+| File | `file->string` `string->file` `file-exists?` `delete-file` `list-directory` `make-directory` |
 | System | `system` `shell->string` `sleep` `usleep` `exit` `get-file-dir` |
 | OOP | `make-class` `new` `send` `slot-ref` `slot-set!` `instance?` `class-of` `add-method` |
 | Predicates | `null?` `pair?` `list?` `symbol?` `number?` `integer?` `float?` `string?` `boolean?` `fn?` `future?` `vector?` `zero?` `even?` `odd?` `positive?` `negative?` `not` `equal?` `eq?` |

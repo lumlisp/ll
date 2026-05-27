@@ -136,7 +136,7 @@ foo  bar?  +  <=>  my-func_1
 ### `require` / `include`
 ```
 (require "file.ll")   ; загружает один раз (отслеживает загруженные файлы)
-(includes "file.ll")   ; загружает каждый раз
+(include "file.ll")   ; загружает каждый раз
 ```
 Пути указываются относительно директории текущего файла. Также поддерживаются модули-директории: `(require "mymod")` ищет `mymod/main.ll`, если путь — директория.
 
@@ -187,6 +187,20 @@ foo  bar?  +  <=>  my-func_1
 (println (await f2))  ; => 7
 ```
 
+### `return`
+```
+(return expr)
+```
+Досрочно завершает текущее замыкание, возвращая `expr` в качестве значения.
+
+```scheme
+(define (find-first lst pred)
+  (if (null? lst) ()
+    (if (pred (car lst))
+      (return (car lst))
+      (find-first (cdr lst) pred))))
+```
+
 ### `define-macro`
 ```
 (define-macro (name params ...) body)
@@ -199,6 +213,7 @@ foo  bar?  +  <=>  my-func_1
 | Переменная | Значение |
 |------------|---------|
 | `*args*` | Список аргументов командной строки, переданных скрипту (пуст в REPL) |
+| `*module-paths*` | Список путей поиска для макроса `import` (по умолчанию: `/etc/ll/modules`, `ll_modules`) |
 
 ## Встроенные функции
 
@@ -340,7 +355,7 @@ foo  bar?  +  <=>  my-func_1
 | `(vector->list v)` | Преобразовать в список |
 | `(list->vector lst)` | Преобразовать в вектор |
 | `(vector-fill! v x)` | Заполнить все элементы |
-| `(vector-map fn v)` | Применить fn к элементам |
+| `(vector-map fn v)` | Применить fn к элементам, вернуть новый вектор |
 
 ### Ввод/Вывод
 | Функция | Описание |
@@ -355,6 +370,8 @@ foo  bar?  +  <=>  my-func_1
 | `(string->file path content)` | Запись строки в файл |
 | `(file-exists? path)` | `#t` если файл существует |
 | `(delete-file path)` | Удалить файл |
+| `(list-directory path)` | Список содержимого директории |
+| `(make-directory path)` | Создать директорию (рекурсивно, как `mkdir -p`) |
 
 ### Объектно-ориентированное программирование
 | Функция | Описание |
@@ -454,6 +471,22 @@ foo  bar?  +  <=>  my-func_1
 (http/start-server server)
 ```
 
+### Упаковщик (Bundler)
+
+Упаковщик собирает скрипт и все его зависимости (`require`/`include`) в самостоятельный исполняемый файл.
+
+```
+ll -b <file.ll>              # упаковать → <file>.bin
+ll -b <file.ll> -o <output>  # указать имя выходного файла
+```
+
+Полученный бинарник самодостаточен — включает интерпретатор LL и исходники всех зависимостей.
+Запускается напрямую (без установленного LL):
+
+```sh
+./myscript.bin [args...]
+```
+
 ### Системные
 | Функция | Описание |
 |---------|----------|
@@ -535,7 +568,7 @@ foo  bar?  +  <=>  my-func_1
 | `(js/encode-string expr)` | Преобразует выражение LL в JavaScript-строку |
 | `(js/encode-file path expr)` | Преобразует выражение LL в JavaScript и записывает в файл |
 
-Поддерживаемые формы LL: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, арифметика, сравнения, строки, векторы, async (`future`, `co`, `await`), операции со списками (`car`, `cdr`, `cons`, `list`), `while`, `for`, `display`, `println`.
+Поддерживаемые формы LL: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, `return`, `and`, `or`, `quote`, `while`, `for`, арифметика (`+` `-` `*` `/` `%` `expt` `sqrt` `abs` `min` `max` `floor` `ceil` `round` `inc` `dec`), сравнения (`=` `<` `>` `<=` `>=`), строки (`string-append` `string-length` `string=?` `string-upcase` `string-downcase` `string-split` `string->number` `number->string` `string-trim` `substring` `string-join`), векторы (`vector` `list->vector` `vector->list`), async (`future` `co` `await`), операции со списками (`car` `cdr` `cons` `list` `length` `null?` `pair?` `list?` `map` `filter` `foldl` `append` `reverse` `member` `assoc` `list-ref` `range`), предикаты (`not` `zero?` `even?` `odd?` `integer?` `string?` `boolean?` `number?` `fn?` `symbol?`), ООП (`defclass` `defmethod` `.` `$` `$=` `new` `send` `slot-ref` `slot-set!` `add-method` `instance?` `class-of` `make-class`), файловый ввод/вывод (`file->string` `string->file` `file-exists?` `delete-file` `list-directory` `make-directory`), JSON (`json/encode` `json/decode`), DOM-операции (`dom/q` `dom/qa` `dom/id` `dom/create` `dom/append` `dom/prepend` `dom/remove` `dom/text` `dom/set-text!` `dom/html` `dom/set-html!` `dom/val` `dom/set-val!` `dom/attr` `dom/set-attr!` `dom/remove-attr!` `dom/add-class!` `dom/remove-class!` `dom/toggle-class!` `dom/has-class?` `dom/on` `dom/off` `dom/css` `dom/set-css!`), `display` `println` `print` `newline` `exit` `sleep`.
 
 ```scheme
 (js/encode-string '(define (fib n)

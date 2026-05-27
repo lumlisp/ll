@@ -187,6 +187,20 @@ parallel and be awaited later:
 (println (await f2))  ; => 7
 ```
 
+### `return`
+```
+(return expr)
+```
+Exits the current closure early, returning `expr` as the value.
+
+```scheme
+(define (find-first lst pred)
+  (if (null? lst) ()
+    (if (pred (car lst))
+      (return (car lst))
+      (find-first (cdr lst) pred))))
+```
+
 ### `define-macro`
 ```
 (define-macro (name params ...) body)
@@ -199,6 +213,7 @@ Macros receive unevaluated argument expressions and return an expression to eval
 | Variable | Value |
 |----------|-------|
 | `*args*` | List of command-line arguments passed to the script (empty in REPL) |
+| `*module-paths*` | List of search paths for the `import` macro (default: `/etc/ll/modules`, `ll_modules`) |
 
 ## Built-in Functions
 
@@ -340,7 +355,7 @@ Module resolution order for each path:
 | `(vector->list v)` | Convert to list |
 | `(list->vector lst)` | Convert to vector |
 | `(vector-fill! v x)` | Fill all elements |
-| `(vector-map fn v)` | Map over elements |
+| `(vector-map fn v)` | Map fn over elements, return new vector |
 
 ### I/O
 | Function | Description |
@@ -355,6 +370,8 @@ Module resolution order for each path:
 | `(string->file path content)` | Write string to file |
 | `(file-exists? path)` | `#t` if file exists |
 | `(delete-file path)` | Remove file |
+| `(list-directory path)` | List directory entries as a list of strings |
+| `(make-directory path)` | Create directory (recursive, like `mkdir -p`) |
 
 ### Object-Oriented Programming
 | Function | Description |
@@ -454,6 +471,22 @@ and must return a response created with `http/make-response`.
 (http/start-server server)
 ```
 
+### Bundler
+
+The bundler packages a script and all its `require`/`include` dependencies into a standalone executable.
+
+```
+ll -b <file.ll>              # bundle → <file>.bin
+ll -b <file.ll> -o <output>  # bundle with custom output path
+```
+
+The resulting binary is self-contained — it includes the LL interpreter and all dependency sources.
+Run it directly (no LL installation needed).
+
+```sh
+./myscript.bin [args...]
+```
+
 ### System
 | Function | Description |
 |----------|-------------|
@@ -535,7 +568,7 @@ Uses `?` placeholders for parameterized queries:
 | `(js/encode-string expr)` | Convert an LL expression to a JavaScript string |
 | `(js/encode-file path expr)` | Convert an LL expression to JavaScript and write to file |
 
-Supported LL forms: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, arithmetic, comparisons, strings, vectors, async (`future`, `co`, `await`), list operations (`car`, `cdr`, `cons`, `list`), `while`, `for`, `display`, `println`.
+Supported LL forms: `define`, `lambda`, `if`, `cond`, `begin`, `set!`, `return`, `and`, `or`, `quote`, `while`, `for`, arithmetic (`+` `-` `*` `/` `%` `expt` `sqrt` `abs` `min` `max` `floor` `ceil` `round` `inc` `dec`), comparisons (`=` `<` `>` `<=` `>=`), strings (`string-append` `string-length` `string=?` `string-upcase` `string-downcase` `string-split` `string->number` `number->string` `string-trim` `substring` `string-join`), vectors (`vector` `list->vector` `vector->list`), async (`future` `co` `await`), list operations (`car` `cdr` `cons` `list` `length` `null?` `pair?` `list?` `map` `filter` `foldl` `append` `reverse` `member` `assoc` `list-ref` `range`), predicates (`not` `zero?` `even?` `odd?` `integer?` `string?` `boolean?` `number?` `fn?` `symbol?`), OOP (`defclass` `defmethod` `.` `$` `$=` `new` `send` `slot-ref` `slot-set!` `add-method` `instance?` `class-of` `make-class`), file I/O (`file->string` `string->file` `file-exists?` `delete-file` `list-directory` `make-directory`), JSON (`json/encode` `json/decode`), DOM operations (`dom/q` `dom/qa` `dom/id` `dom/create` `dom/append` `dom/prepend` `dom/remove` `dom/text` `dom/set-text!` `dom/html` `dom/set-html!` `dom/val` `dom/set-val!` `dom/attr` `dom/set-attr!` `dom/remove-attr!` `dom/add-class!` `dom/remove-class!` `dom/toggle-class!` `dom/has-class?` `dom/on` `dom/off` `dom/css` `dom/set-css!`), `display` `println` `print` `newline` `exit` `sleep`.
 
 ```scheme
 (js/encode-string '(define (fib n)
