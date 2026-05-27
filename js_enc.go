@@ -996,8 +996,32 @@ func transpileCons(c *Cons) (string, error) {
 		}
 		return "(" + args[0] + " - 1)", nil
 
-	case "new", "send", "slot-ref", "slot-set!", "instance?", "class-of", "add-method":
-		return "// " + sym.Name + " not supported in JS", nil
+	case "make-class":
+		return transpileMakeClass(c)
+	case "defclass":
+		return transpileDefclass(c)
+	case "defmethod":
+		return transpileDefmethod(c)
+	case ".":
+		return transpileDot(c)
+	case "$":
+		return transpileDollar(c)
+	case "$=":
+		return transpileDollarSet(c)
+	case "new":
+		return transpileNew(c)
+	case "send":
+		return transpileSend(c)
+	case "slot-ref":
+		return transpileSlotRef(c)
+	case "slot-set!":
+		return transpileSlotSet(c)
+	case "add-method":
+		return transpileAddMethod(c)
+	case "instance?":
+		return transpileInstanceOf(c)
+	case "class-of":
+		return transpileClassOf(c)
 
 	case "require", "include":
 		args, err := transpileArgs(c.Cdr)
@@ -1244,4 +1268,539 @@ func transpileArgs(v Value) ([]string, error) {
 		v = cons.Cdr
 	}
 	return result, nil
+}
+
+type slotInfo struct {
+	name         string
+	hasDefault   bool
+	defaultValue Value
+}
+
+func extractQuotedSymbol(v Value) string {
+	cons, ok := v.(*Cons)
+	if !ok {
+		return ""
+	}
+	sym, ok := cons.Car.(*Sym)
+	if !ok || sym.Name != "quote" {
+		return ""
+	}
+	argCons, ok := cons.Cdr.(*Cons)
+	if !ok {
+		return ""
+	}
+	if s, ok := argCons.Car.(*Sym); ok {
+		return s.Name
+	}
+	return ""
+}
+
+func parseSlotList(v Value) ([]slotInfo, error) {
+	var slots []slotInfo
+	for v != Nil {
+		cons, ok := v.(*Cons)
+		if !ok {
+			break
+		}
+		def, ok := cons.Car.(*Cons)
+		if !ok {
+			return nil, fmt.Errorf("each slot must be a list (name default?)")
+		}
+		nameSym, ok := def.Car.(*Sym)
+		if !ok {
+			return nil, fmt.Errorf("slot name must be a symbol")
+		}
+		si := slotInfo{name: nameSym.Name, defaultValue: Nil}
+		if def.Cdr != Nil {
+			if dc, ok := def.Cdr.(*Cons); ok {
+				si.hasDefault = true
+				si.defaultValue = dc.Car
+			}
+		}
+		slots = append(slots, si)
+		v = cons.Cdr
+	}
+	return slots, nil
+}
+
+func transpileDefclass(c *Cons) (string, error) {
+	argCons, ok := c.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("defclass: requires arguments (name parent slots)")
+	}
+
+	nameSym, ok := argCons.Car.(*Sym)
+	if !ok {
+		return "", fmt.Errorf("defclass: first argument must be a symbol (class name)")
+	}
+	className := nameSym.Name
+
+	parentCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("defclass: parent and slots required")
+	}
+	parentExpr := parentCons.Car
+
+	parentStr := ""
+	if parentExpr != Nil {
+		if parentList, ok := parentExpr.(*Cons); ok {
+			if parentSym, ok := parentList.Car.(*Sym); ok {
+				parentStr = " extends " + parentSym.Name
+			}
+		}
+	}
+
+	slotsCons, ok := parentCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("defclass: slots list required")
+	}
+	slotsList := slotsCons.Car
+
+	slots, err := parseSlotList(slotsList)
+	if err != nil {
+		return "", err
+	}
+
+	var b strings.Builder
+	b.WriteString("class ")
+	b.WriteString(className)
+	b.WriteString(parentStr)
+	b.WriteString(" {\n  constructor(")
+	var params []string
+	for _, s := range slots {
+		d, err := transpileExpr(s.defaultValue, true)
+		if err != nil {
+			return "", err
+		}
+		params = append(params, s.name+" = "+d)
+	}
+	b.WriteString(strings.Join(params, ", "))
+	b.WriteString(") {\n")
+	if parentStr != "" {
+		b.WriteString("    super();\n")
+	}
+	for _, s := range slots {
+		b.WriteString("    this.")
+		b.WriteString(s.name)
+		b.WriteString(" = ")
+		b.WriteString(s.name)
+		b.WriteString(";\n")
+	}
+	b.WriteString("  }\n}")
+	return b.String(), nil
+}
+
+func transpileDefmethod(c *Cons) (string, error) {
+	argCons, ok := c.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("defmethod: requires arguments (class name params body...)")
+	}
+	classStr, err := transpileExpr(argCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+
+	nameCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("defmethod: method name required")
+	}
+
+	methodNameSym, ok := nameCons.Car.(*Sym)
+	if !ok {
+		return "", fmt.Errorf("defmethod: method name must be a symbol")
+	}
+	methodName := methodNameSym.Name
+
+	bodyCons, ok := nameCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("defmethod: params required")
+	}
+	paramsList := bodyCons.Car
+	bodyStart := bodyCons.Cdr
+
+	var params []string
+	for paramsList != Nil {
+		pc, ok := paramsList.(*Cons)
+		if !ok {
+			break
+		}
+		if psym, ok := pc.Car.(*Sym); ok {
+			params = append(params, psym.Name)
+		}
+		paramsList = pc.Cdr
+	}
+
+	var body []string
+	for bodyStart != Nil {
+		bc, ok := bodyStart.(*Cons)
+		if !ok {
+			break
+		}
+		js, err := transpileExpr(bc.Car, false)
+		if err != nil {
+			return "", err
+		}
+		body = append(body, js)
+		bodyStart = bc.Cdr
+	}
+
+	bodyStr := strings.Join(body, "; ")
+	if bodyStr != "" {
+		bodyStr += ";"
+	}
+
+	return classStr + ".prototype." + methodName + " = function(" + strings.Join(params, ", ") + ") { " + bodyStr + " }", nil
+}
+
+func transpileDot(c *Cons) (string, error) {
+	argCons, ok := c.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf(".: requires at least 2 arguments (obj method)")
+	}
+	objStr, err := transpileExpr(argCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+
+	methodCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf(".: method name required")
+	}
+	methodSym, ok := methodCons.Car.(*Sym)
+	if !ok {
+		return "", fmt.Errorf(".: method name must be a symbol")
+	}
+
+	methodArgs, err := transpileArgs(methodCons.Cdr)
+	if err != nil {
+		return "", err
+	}
+
+	return objStr + "." + methodSym.Name + "(" + strings.Join(methodArgs, ", ") + ")", nil
+}
+
+func transpileDollar(c *Cons) (string, error) {
+	argCons, ok := c.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("$: slot name required")
+	}
+	slotSym, ok := argCons.Car.(*Sym)
+	if !ok {
+		return "", fmt.Errorf("$: slot name must be a symbol")
+	}
+	return "self." + slotSym.Name, nil
+}
+
+func transpileDollarSet(c *Cons) (string, error) {
+	argCons, ok := c.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("$=: requires 2 arguments (slot name value)")
+	}
+	slotSym, ok := argCons.Car.(*Sym)
+	if !ok {
+		return "", fmt.Errorf("$=: slot name must be a symbol")
+	}
+	valCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("$=: value required")
+	}
+	valStr, err := transpileExpr(valCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+	return "self." + slotSym.Name + " = " + valStr + ";", nil
+}
+
+func transpileNew(c *Cons) (string, error) {
+	args := c.Cdr
+	argCons, ok := args.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("new: requires at least 1 argument (a class)")
+	}
+	className, err := transpileExpr(argCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+
+	// Scan args to determine mode: keyword ('key val) or positional
+	hasKeywords := false
+	for rest := argCons.Cdr; rest != Nil; rest = rest.(*Cons).Cdr {
+		rc, ok := rest.(*Cons)
+		if !ok {
+			break
+		}
+		if name := extractQuotedSymbol(rc.Car); name != "" {
+			hasKeywords = true
+			break
+		}
+	}
+
+	rest := argCons.Cdr
+
+	if hasKeywords {
+		var fields []string
+		for rest != Nil {
+			rc, ok := rest.(*Cons)
+			if !ok {
+				break
+			}
+			name := extractQuotedSymbol(rc.Car)
+			if name == "" {
+				return "", fmt.Errorf("new: mixed keyword and positional args not supported")
+			}
+			valCons, ok := rc.Cdr.(*Cons)
+			if !ok {
+				return "", fmt.Errorf("new: missing value for keyword '%s'", name)
+			}
+			val, err := transpileExpr(valCons.Car, true)
+			if err != nil {
+				return "", err
+			}
+			fields = append(fields, name+": "+val)
+			rest = valCons.Cdr
+		}
+		return "new " + className + "({" + strings.Join(fields, ", ") + "})", nil
+	}
+
+	var positional []string
+	for rest != Nil {
+		rc, ok := rest.(*Cons)
+		if !ok {
+			break
+		}
+		s, err := transpileExpr(rc.Car, true)
+		if err != nil {
+			return "", err
+		}
+		positional = append(positional, s)
+		rest = rc.Cdr
+	}
+
+	if len(positional) == 0 {
+		return "new " + className + "()", nil
+	}
+	return "new " + className + "(" + strings.Join(positional, ", ") + ")", nil
+}
+
+func transpileSend(c *Cons) (string, error) {
+	args := c.Cdr
+	argCons, ok := args.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("send: requires at least 2 arguments (instance method-name)")
+	}
+	objStr, err := transpileExpr(argCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+
+	methodCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("send: method name required")
+	}
+
+	methodName := extractQuotedSymbol(methodCons.Car)
+	if methodName == "" {
+		return "", fmt.Errorf("send: method name must be a quoted symbol")
+	}
+
+	methodArgs, err := transpileArgs(methodCons.Cdr)
+	if err != nil {
+		return "", err
+	}
+
+	return objStr + "." + methodName + "(" + strings.Join(methodArgs, ", ") + ")", nil
+}
+
+func transpileSlotRef(c *Cons) (string, error) {
+	args := c.Cdr
+	argCons, ok := args.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("slot-ref: requires 2 arguments")
+	}
+	objStr, err := transpileExpr(argCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+	slotCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("slot-ref: slot name required")
+	}
+	slotName := extractQuotedSymbol(slotCons.Car)
+	if slotName == "" {
+		return "", fmt.Errorf("slot-ref: slot name must be a quoted symbol")
+	}
+	return objStr + "." + slotName, nil
+}
+
+func transpileSlotSet(c *Cons) (string, error) {
+	args := c.Cdr
+	argCons, ok := args.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("slot-set!: requires 3 arguments")
+	}
+	objStr, err := transpileExpr(argCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+	slotCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("slot-set!: slot name required")
+	}
+	slotName := extractQuotedSymbol(slotCons.Car)
+	if slotName == "" {
+		return "", fmt.Errorf("slot-set!: slot name must be a quoted symbol")
+	}
+	valCons, ok := slotCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("slot-set!: value required")
+	}
+	valStr, err := transpileExpr(valCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+	return objStr + "." + slotName + " = " + valStr + ";", nil
+}
+
+func transpileAddMethod(c *Cons) (string, error) {
+	args := c.Cdr
+	argCons, ok := args.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("add-method: requires 3 arguments (class name function)")
+	}
+	classStr, err := transpileExpr(argCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+	methodCons, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("add-method: method name required")
+	}
+	methodName := extractQuotedSymbol(methodCons.Car)
+	if methodName == "" {
+		return "", fmt.Errorf("add-method: method name must be a quoted symbol")
+	}
+	fnCons, ok := methodCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("add-method: function required")
+	}
+	fnStr, err := transpileExpr(fnCons.Car, true)
+	if err != nil {
+		return "", err
+	}
+	return classStr + ".prototype." + methodName + " = " + fnStr + ";", nil
+}
+
+func transpileInstanceOf(c *Cons) (string, error) {
+	args, err := transpileArgs(c.Cdr)
+	if err != nil {
+		return "", err
+	}
+	if len(args) != 1 {
+		return "", fmt.Errorf("instance?: requires 1 argument")
+	}
+	return "(" + args[0] + " !== null && " + args[0] + " !== undefined && " + args[0] + ".constructor !== undefined)", nil
+}
+
+func transpileClassOf(c *Cons) (string, error) {
+	args, err := transpileArgs(c.Cdr)
+	if err != nil {
+		return "", err
+	}
+	if len(args) != 1 {
+		return "", fmt.Errorf("class-of: requires 1 argument")
+	}
+	return args[0] + ".constructor", nil
+}
+
+type makeClassSlot struct {
+	name   string
+	defVal Value
+}
+
+func transpileMakeClass(c *Cons) (string, error) {
+	argCons, ok := c.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("make-class: requires at least 2 arguments (name parent)")
+	}
+
+	nameStr := extractQuotedSymbol(argCons.Car)
+	if nameStr == "" {
+		return "", fmt.Errorf("make-class: class name must be a quoted symbol")
+	}
+
+	rest1, ok := argCons.Cdr.(*Cons)
+	if !ok {
+		return "", fmt.Errorf("make-class: parent required")
+	}
+	parentExpr := rest1.Car
+
+	parentStr := ""
+	if parentExpr != Nil {
+		if parentSym, ok := parentExpr.(*Sym); ok {
+			parentStr = " extends " + parentSym.Name
+		}
+	}
+
+	var slots []makeClassSlot
+	if rest1.Cdr != Nil {
+		if slotsCons, ok := rest1.Cdr.(*Cons); ok {
+			slotsVal := slotsCons.Car
+			if quoted, ok := slotsVal.(*Cons); ok {
+				if qsym, ok := quoted.Car.(*Sym); ok && qsym.Name == "quote" {
+					if slotsListCons, ok := quoted.Cdr.(*Cons); ok {
+						for v := slotsListCons.Car; v != Nil; {
+							slotPair, ok := v.(*Cons)
+							if !ok {
+								break
+							}
+							def, ok := slotPair.Car.(*Cons)
+							if !ok {
+								break
+							}
+							sym, ok := def.Car.(*Sym)
+							if !ok {
+								break
+							}
+							ms := makeClassSlot{name: sym.Name, defVal: Nil}
+							if def.Cdr != Nil {
+								if dc, ok := def.Cdr.(*Cons); ok {
+									ms.defVal = dc.Car
+								}
+							}
+							slots = append(slots, ms)
+							v = slotPair.Cdr
+						}
+					}
+				}
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("class ")
+	b.WriteString(nameStr)
+	b.WriteString(parentStr)
+	b.WriteString(" {\n  constructor(")
+	var params []string
+	for _, s := range slots {
+		d, err := transpileExpr(s.defVal, true)
+		if err != nil {
+			return "", err
+		}
+		params = append(params, s.name+" = "+d)
+	}
+	b.WriteString(strings.Join(params, ", "))
+	b.WriteString(") {\n")
+	if parentStr != "" {
+		b.WriteString("    super();\n")
+	}
+	for _, s := range slots {
+		b.WriteString("    this.")
+		b.WriteString(s.name)
+		b.WriteString(" = ")
+		b.WriteString(s.name)
+		b.WriteString(";\n")
+	}
+	b.WriteString("  }\n}")
+	return b.String(), nil
 }
