@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -41,11 +42,108 @@ func (e *Eval) builtinJsEncodeFile(args []Value) (Value, error) {
 	if err != nil {
 		return nil, fmt.Errorf("js/encode-file: %v", err)
 	}
-	js, err := transpileLL(string(data))
+
+	// Parse the file content
+	l := &Lexer{}
+	p := &Parser{}
+	tokens, err := l.Tokenize(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("js/encode-file: %v", err)
+	}
+	ast, err := p.Parse(tokens)
+	if err != nil {
+		return nil, fmt.Errorf("js/encode-file: %v", err)
+	}
+
+	// Expand require/include directives
+	included := make(map[string]bool)
+	ast, err = expandRequires(ast, string(path), included)
+	if err != nil {
+		return nil, fmt.Errorf("js/encode-file: %v", err)
+	}
+
+	// Transpile the expanded AST
+	js, err := transpileAST(ast)
 	if err != nil {
 		return nil, fmt.Errorf("js/encode-file: %v", err)
 	}
 	return String(js), nil
+}
+
+// expandRequires walks the AST and replaces (require "file") and (include "file")
+// forms with the parsed and expanded contents of the referenced file.
+func expandRequires(ast []Value, basePath string, included map[string]bool) ([]Value, error) {
+	var result []Value
+	for _, expr := range ast {
+		expanded, err := expandExprRequire(expr, basePath, included)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, expanded...)
+	}
+	return result, nil
+}
+
+// expandExprRequire expands a single expression, replacing require/include forms
+// with the contents of the referenced file.
+func expandExprRequire(v Value, basePath string, included map[string]bool) ([]Value, error) {
+	cons, ok := v.(*Cons)
+	if !ok {
+		return []Value{v}, nil
+	}
+	sym, ok := cons.Car.(*Sym)
+	if !ok {
+		return []Value{v}, nil
+	}
+	if sym.Name != "require" && sym.Name != "include" {
+		return []Value{v}, nil
+	}
+
+	args := cons.Cdr
+	argCons, ok := args.(*Cons)
+	if !ok {
+		return nil, fmt.Errorf("require: filename required")
+	}
+	filename, ok := argCons.Car.(String)
+	if !ok {
+		return nil, fmt.Errorf("require: filename must be a string")
+	}
+
+	resolvedPath := resolvePath(basePath, string(filename))
+
+	// Prevent circular includes
+	if included[resolvedPath] {
+		return []Value{}, nil
+	}
+	included[resolvedPath] = true
+
+	content, err := readFileString(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("require: %v", err)
+	}
+
+	// Parse the included file
+	lex := &Lexer{}
+	par := &Parser{}
+	tokens, err := lex.Tokenize(content)
+	if err != nil {
+		return nil, fmt.Errorf("require: %v", err)
+	}
+	subAst, err := par.Parse(tokens)
+	if err != nil {
+		return nil, fmt.Errorf("require: %v", err)
+	}
+
+	// Recursively expand
+	return expandRequires(subAst, resolvedPath, included)
+}
+
+func resolvePath(basePath, target string) string {
+	if basePath == "" || strings.HasPrefix(target, "/") {
+		return target
+	}
+	dir := filepath.Dir(basePath)
+	return filepath.Join(dir, target)
 }
 
 func transpileLL(input string) (string, error) {
@@ -59,6 +157,10 @@ func transpileLL(input string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return transpileAST(ast)
+}
+
+func transpileAST(ast []Value) (string, error) {
 	var out []string
 	for _, expr := range ast {
 		js, err := transpileExpr(expr, false)

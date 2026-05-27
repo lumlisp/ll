@@ -1764,4 +1764,215 @@ func TestCgoRealCallFloatIntArg(t *testing.T) {
 	evalStringResult(t, e, `(cgo/close the-lib)`)
 }
 
+// --- Typed CGO Tests ---
+
+func TestCgoTypedStringArg(t *testing.T) {
+	e := NewEval()
+	lib, err := evalStringResult(t, e, `(cgo/open "libc.so.6")`)
+	if err != nil {
+		t.Skip("libc.so.6 not available:", err)
+	}
+
+	e.env.Set("the-lib", lib)
+	defer e.env.Set("the-lib", Nil)
+
+	_, err = evalStringResult(t, e, `(cgo/func the-lib "strlen" '(string int))`)
+	if err != nil {
+		t.Fatal("cgo/func strlen failed:", err)
+	}
+
+	result, err := evalStringResult(t, e, `(cgo/call the-lib "strlen" "hello")`)
+	if err != nil {
+		t.Fatal("cgo/call strlen failed:", err)
+	}
+	if result != Integer(5) {
+		t.Errorf("strlen(\"hello\") = %v, want 5", result)
+	}
+
+	evalStringResult(t, e, `(cgo/close the-lib)`)
+}
+
+func TestCgoTypedStringReturn(t *testing.T) {
+	e := NewEval()
+	lib, err := evalStringResult(t, e, `(cgo/open "libc.so.6")`)
+	if err != nil {
+		t.Skip("libc.so.6 not available:", err)
+	}
+
+	e.env.Set("the-lib", lib)
+	defer e.env.Set("the-lib", Nil)
+
+	_, err = evalStringResult(t, e, `(cgo/func the-lib "getenv" '(string string))`)
+	if err != nil {
+		t.Fatal("cgo/func getenv failed:", err)
+	}
+
+	result, err := evalStringResult(t, e, `(cgo/call the-lib "getenv" "USER")`)
+	if err != nil {
+		t.Fatal("cgo/call getenv failed:", err)
+	}
+	s, ok := result.(String)
+	if !ok {
+		t.Fatalf("getenv result is %T, want String", result)
+	}
+	if string(s) == "" {
+		t.Error("getenv(\"USER\") returned empty string")
+	}
+
+	evalStringResult(t, e, `(cgo/close the-lib)`)
+}
+
+func TestCgoTypedDouble(t *testing.T) {
+	e := NewEval()
+	lib, err := evalStringResult(t, e, `(cgo/open "libm.so.6")`)
+	if err != nil {
+		t.Skip("libm.so.6 not available:", err)
+	}
+
+	e.env.Set("the-lib", lib)
+	defer e.env.Set("the-lib", Nil)
+
+	_, err = evalStringResult(t, e, `(cgo/func the-lib "sqrt" '(double double))`)
+	if err != nil {
+		t.Fatal("cgo/func sqrt failed:", err)
+	}
+
+	result, err := evalStringResult(t, e, `(cgo/call the-lib "sqrt" 144.0)`)
+	if err != nil {
+		t.Fatal("cgo/call sqrt failed:", err)
+	}
+	fr, ok := result.(Float)
+	if !ok {
+		t.Fatalf("sqrt result is %T, want Float", result)
+	}
+	if float64(fr) < 11.999 || float64(fr) > 12.001 {
+		t.Errorf("sqrt(144.0) = %v, want ~12", float64(fr))
+	}
+
+	evalStringResult(t, e, `(cgo/close the-lib)`)
+}
+
+// --- JS Encode Require Tests ---
+
+func TestJsEncodeFileRequire(t *testing.T) {
+	dir := t.TempDir()
+
+	helperPath := dir + "/helper.ll"
+	err := os.WriteFile(helperPath, []byte("(define (greet name) (string-append \"Hello, \" name))\n"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mainPath := dir + "/main.ll"
+	mainContent := `
+(require "helper.ll")
+(define msg (greet "World"))
+(display msg)
+`
+	err = os.WriteFile(mainPath, []byte(mainContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := NewEval()
+	input := `(js/encode-file "` + mainPath + `")`
+	got, err := evalStringResult(t, e, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := got.(String)
+	if !ok {
+		t.Fatalf("expected String, got %T", got)
+	}
+	js := string(s)
+
+	if !strings.Contains(js, "function greet(") {
+		t.Errorf("expected greet function in JS output, got: %q", js)
+	}
+	if !strings.Contains(js, "Hello, ") {
+		t.Errorf("expected 'Hello,' in JS output, got: %q", js)
+	}
+	if !strings.Contains(js, "console.log(") {
+		t.Errorf("expected console.log in JS output, got: %q", js)
+	}
+}
+
+func TestJsEncodeFileRequireRecursive(t *testing.T) {
+	dir := t.TempDir()
+
+	level2Path := dir + "/level2.ll"
+	err := os.WriteFile(level2Path, []byte("(define (helper2) \"from level2\")\n"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	level1Path := dir + "/level1.ll"
+	level1Content := `(require "level2.ll")
+(define (helper1) (helper2))
+`
+	err = os.WriteFile(level1Path, []byte(level1Content), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mainPath := dir + "/main.ll"
+	mainContent := `(require "level1.ll")
+(helper1)
+`
+	err = os.WriteFile(mainPath, []byte(mainContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := NewEval()
+	input := `(js/encode-file "` + mainPath + `")`
+	got, err := evalStringResult(t, e, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := got.(String)
+	if !ok {
+		t.Fatalf("expected String, got %T", got)
+	}
+	js := string(s)
+
+	if !strings.Contains(js, "helper1") {
+		t.Errorf("expected helper1 in JS output, got: %q", js)
+	}
+	if !strings.Contains(js, "helper2") {
+		t.Errorf("expected helper2 in JS output, got: %q", js)
+	}
+}
+
+func TestJsEncodeFileRequireCircular(t *testing.T) {
+	dir := t.TempDir()
+
+	aPath := dir + "/a.ll"
+	err := os.WriteFile(aPath, []byte("(require \"b.ll\") (define a-val 1)\n"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bPath := dir + "/b.ll"
+	err = os.WriteFile(bPath, []byte("(require \"a.ll\") (define b-val 2)\n"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := NewEval()
+	input := `(js/encode-file "` + aPath + `")`
+	got, err := evalStringResult(t, e, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := got.(String)
+	if !ok {
+		t.Fatalf("expected String, got %T", got)
+	}
+	js := string(s)
+
+	if !strings.Contains(js, "a-val") {
+		t.Errorf("expected a-val in JS output, got: %q", js)
+	}
+}
 

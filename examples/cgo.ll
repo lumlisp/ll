@@ -5,27 +5,44 @@
 (println "To use: (cgo/open \"libmylib.so\")")
 (println "        (cgo/func lib \"my_function\")")
 (println "        (cgo/call lib \"my_function\" arg1 arg2)")
+(println "")
+(println "With types: (cgo/func lib \"fn\" '(arg-types... ret-type))")
+(println "  e.g. (cgo/func lib \"strlen\" '(string int))")
 
-(println "\nExample with math library (libm.so on Linux):")
-(println "--- Integer functions (pass args as integers) ---")
-(define lib (cgo/open "libm.so.6"))
+(println "\n=== Auto-detected (legacy) ===")
+(define libm (cgo/open "libm.so.6"))
+(cgo/func libm "abs")
+(define r1 (cgo/call libm "abs" -42))
+(println "abs(-42) =" r1)
 
-;; abs is a pure integer function (takes int, returns int)
-(cgo/func lib "abs")
-(define result-int (cgo/call lib "abs" -42))
-(println "abs(-42) =" result-int)
+(cgo/func libm "sqrt")
+(define r2 (cgo/call libm "sqrt" 144.0))
+(println "sqrt(144.0) =" r2)
 
-(println "\n--- Float functions (pass at least one arg as float) ---")
-(cgo/func lib "sqrt")
-(define result-f1 (cgo/call lib "sqrt" 144.0))
-(println "sqrt(144.0) =" result-f1)
+(cgo/close libm)
 
-(define result-f2 (cgo/call lib "sqrt" 2.0))
-(println "sqrt(2.0) =" result-f2)
+(println "\n=== Typed FFI ===")
+(define libc (cgo/open "libc.so.6"))
 
-(cgo/func lib "sin")
-(define result-sin (cgo/call lib "sin" 0.0))
-(println "sin(0.0) =" result-sin)
+;; String arg, int return
+(cgo/func libc "strlen" '(string int))
+(define len (cgo/call libc "strlen" "Hello World!"))
+(println "strlen(\"Hello World!\") =" len)
 
-(cgo/close lib)
+;; String arg, string return
+(cgo/func libc "getenv" '(string string))
+(define home (cgo/call libc "getenv" "HOME"))
+(println "HOME =" home)
+
+;; Explicit typed double
+(cgo/func libc "atof" '(string double))
+(define num (cgo/call libc "atof" "3.14159"))
+(println "atof(\"3.14159\") =" num)
+
+;; Explicit typed ints
+(cgo/func libc "abs" '(int int))
+(define r3 (cgo/call libc "abs" -99))
+(println "abs(-99) =" r3)
+
+(cgo/close libc)
 (println "\nDone!")
