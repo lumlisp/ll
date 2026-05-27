@@ -1458,14 +1458,14 @@ func TestJsEncodeStringBasic(t *testing.T) {
 		{`(js/encode-string "\"hello\"")`, `"hello"`},
 		{`(js/encode-string "#t")`, "true"},
 		{`(js/encode-string "#f")`, "false"},
-		{`(js/encode-string "nil")`, "null"},
+		{`(js/encode-string "nil")`, "[]"},
 		{`(js/encode-string "(+ 1 2)")`, "(1 + 2)"},
 		{`(js/encode-string "(* 3 4)")`, "(3 * 4)"},
 		{`(js/encode-string "(/ 10 2)")`, "(10 / 2)"},
 		{`(js/encode-string "(- 5 3)")`, "(5 - 3)"},
 		{`(js/encode-string "(% 10 3)")`, "(10 % 3)"},
-		{`(js/encode-string "(define x 42)")`, "let x = 42;"},
-		{`(js/encode-string "(define (square x) (* x x))")`, "function square(x) { (x * x); }"},
+		{`(js/encode-string "(define x 42)")`, "let x = 42"},
+		{`(js/encode-string "(define (square x) (* x x))")`, "function square(x) { return (x * x); }"},
 		{`(js/encode-string "(if #t 1 2)")`, "(true ? 1 : 2)"},
 		{`(js/encode-string "(list 1 2 3)")`, "[1, 2, 3]"},
 		{`(js/encode-string "(car (list 1 2))")`, "[1, 2][0]"},
@@ -1505,8 +1505,8 @@ func TestJsEncodeStringAdvanced(t *testing.T) {
 		input string
 		want  string
 	}{
-		{`(js/encode-string "(lambda (x) (* x x))")`, "(function(x) { (x * x); })"},
-		{`(js/encode-string "(begin (define x 1) (define y 2) (+ x y))")`, "(function() { let x = 1;; let y = 2;; (x + y); })()"},
+		{`(js/encode-string "(lambda (x) (* x x))")`, "(function(x) { return (x * x); })"},
+		{`(js/encode-string "(begin (define x 1) (define y 2) (+ x y))")`, "(function() { let x = 1; let y = 2; return (x + y); })()"},
 		{`(js/encode-string "(cond ((= x 1) \"one\") ((= x 2) \"two\") (else \"other\"))")`, "((x === 1) ? \"one\" : (x === 2) ? \"two\" : \"other\")"},
 		{`(js/encode-string "(and #t #t)")`, "(true && true)"},
 		{`(js/encode-string "(or #f #t)")`, "(false || true)"},
@@ -1556,7 +1556,7 @@ func TestJsEncodeStringMultiExpr(t *testing.T) {
 	if js == "" {
 		t.Fatal("expected non-empty JS output")
 	}
-	expected := "function fact(n) { ((n <= 1) ? 1 : (n * fact((n - 1)))); }"
+	expected := "function fact(n) { return ((n <= 1) ? 1 : (n * fact((n - 1)))); }"
 	if js != expected {
 		// The actual output depends on transpiler details, just verify it compiles to valid JS structure
 		if len(js) < 10 {
@@ -1606,7 +1606,7 @@ func TestJsEncodeFile(t *testing.T) {
 		t.Fatalf("expected String, got %T", got)
 	}
 	js := string(s)
-	if !strings.Contains(js, "let x = 42;") || !strings.Contains(js, "(x + 1)") {
+	if !strings.Contains(js, "let x = 42") || !strings.Contains(js, "(x + 1)") {
 		t.Fatalf("unexpected JS output: %q", js)
 	}
 }
@@ -1971,7 +1971,7 @@ func TestJsEncodeFileRequireCircular(t *testing.T) {
 	}
 	js := string(s)
 
-	if !strings.Contains(js, "a-val") {
+	if !strings.Contains(js, "a_val") {
 		t.Errorf("expected a-val in JS output, got: %q", js)
 	}
 }
@@ -2063,7 +2063,7 @@ func TestJsEncodeFileOopDom(t *testing.T) {
 		name string
 		want string
 	}{
-		{"import inlines module", `let greeting = "hello from module";`},
+		{"import inlines module", `let greeting = "hello from module"`},
 		{"file->string", `require("fs").readFileSync("input.txt"`},
 		{"string->file", `require("fs").writeFileSync("output.txt", data)`},
 		{"file-exists?", `require("fs").existsSync("test.txt")`},

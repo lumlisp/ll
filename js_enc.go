@@ -76,6 +76,28 @@ func (e *Eval) builtinJsEncodeFile(args []Value) (Value, error) {
 	return String(js), nil
 }
 
+var jsReserved = map[string]bool{
+	"class": true, "let": true, "var": true, "const": true,
+	"function": true, "return": true, "if": true, "else": true,
+	"while": true, "for": true, "switch": true, "case": true,
+	"break": true, "continue": true, "try": true, "catch": true,
+	"finally": true, "throw": true, "new": true, "this": true,
+	"super": true, "yield": true, "async": true, "await": true,
+	"import": true, "export": true, "extends": true, "typeof": true,
+	"void": true, "delete": true, "with": true, "do": true,
+	"default": true, "static": true, "in": true, "of": true,
+	"instanceof": true, "debugger": true,
+}
+
+func jsSymbol(name string) string {
+	name = strings.ReplaceAll(name, "?", "_q")
+	name = strings.ReplaceAll(name, "-", "_")
+	if jsReserved[name] {
+		name = name + "_"
+	}
+	return name
+}
+
 func listToStrings(v Value) []string {
 	var result []string
 	for v != Nil {
@@ -249,7 +271,7 @@ func transpileAST(ast []Value) (string, error) {
 func transpileExpr(v Value, asExpr bool) (string, error) {
 	switch val := v.(type) {
 	case *NilType:
-		return "null", nil
+		return "[]", nil
 	case Integer:
 		return fmt.Sprintf("%d", int64(val)), nil
 	case Float:
@@ -269,9 +291,9 @@ func transpileExpr(v Value, asExpr bool) (string, error) {
 			return "false", nil
 		}
 		if val.Name == "nil" {
-			return "null", nil
+			return "[]", nil
 		}
-		return val.Name, nil
+		return jsSymbol(val.Name), nil
 	case *Cons:
 		return transpileCons(val)
 	case *Vector:
@@ -326,7 +348,7 @@ func transpileCons(c *Cons) (string, error) {
 		if len(args) < 2 {
 			return "", fmt.Errorf("set!: requires 2 arguments")
 		}
-		return args[0] + " = " + args[1] + ";", nil
+		return args[0] + " = " + args[1], nil
 
 	case "if":
 		args, err := transpileArgs(c.Cdr)
@@ -352,6 +374,7 @@ func transpileCons(c *Cons) (string, error) {
 		if len(args) == 0 {
 			return "null", nil
 		}
+		args[len(args)-1] = "return " + args[len(args)-1]
 		return "(function() { " + strings.Join(args, "; ") + "; })()", nil
 
 	case "lambda":
@@ -1447,7 +1470,7 @@ func transpileCons(c *Cons) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return sym.Name + "(" + strings.Join(args, ", ") + ")", nil
+		return jsSymbol(sym.Name) + "(" + strings.Join(args, ", ") + ")", nil
 	}
 }
 
@@ -1469,7 +1492,7 @@ func transpileDefine(c *Cons) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return "let " + sym.Name + " = " + val + ";", nil
+		return "let " + jsSymbol(sym.Name) + " = " + val, nil
 	}
 
 	listCons, ok := first.(*Cons)
@@ -1489,7 +1512,7 @@ func transpileDefine(c *Cons) (string, error) {
 			break
 		}
 		if psym, ok := pc.Car.(*Sym); ok {
-			params = append(params, psym.Name)
+			params = append(params, jsSymbol(psym.Name))
 		}
 		paramList = pc.Cdr
 	}
@@ -1508,8 +1531,11 @@ func transpileDefine(c *Cons) (string, error) {
 		rest = bc.Cdr
 	}
 
+	if len(body) > 0 {
+		body[len(body)-1] = "return " + body[len(body)-1]
+	}
 	bodyStr := strings.Join(body, "; ")
-	return "function " + fnSym.Name + "(" + strings.Join(params, ", ") + ") { " + bodyStr + "; }", nil
+	return "function " + jsSymbol(fnSym.Name) + "(" + strings.Join(params, ", ") + ") { " + bodyStr + "; }", nil
 }
 
 func transpileLambda(c *Cons) (string, error) {
@@ -1526,7 +1552,7 @@ func transpileLambda(c *Cons) (string, error) {
 		for p := paramsList; p != Nil; p = p.(*Cons).Cdr {
 			pc := p.(*Cons)
 			if psym, ok := pc.Car.(*Sym); ok {
-				params = append(params, psym.Name)
+				params = append(params, jsSymbol(psym.Name))
 			}
 		}
 	}
@@ -1548,6 +1574,7 @@ func transpileLambda(c *Cons) (string, error) {
 	if len(body) == 0 {
 		return "(function(" + strings.Join(params, ", ") + ") { return null; })", nil
 	}
+	body[len(body)-1] = "return " + body[len(body)-1]
 	return "(function(" + strings.Join(params, ", ") + ") { " + strings.Join(body, "; ") + "; })", nil
 }
 
@@ -1565,7 +1592,7 @@ func transpileCo(c *Cons) (string, error) {
 		for p := paramsList; p != Nil; p = p.(*Cons).Cdr {
 			pc := p.(*Cons)
 			if psym, ok := pc.Car.(*Sym); ok {
-				params = append(params, psym.Name)
+				params = append(params, jsSymbol(psym.Name))
 			}
 		}
 	}
@@ -1587,6 +1614,7 @@ func transpileCo(c *Cons) (string, error) {
 	if len(body) == 0 {
 		return "(async function(" + strings.Join(params, ", ") + ") { return null; })", nil
 	}
+	body[len(body)-1] = "return " + body[len(body)-1]
 	return "(async function(" + strings.Join(params, ", ") + ") { " + strings.Join(body, "; ") + "; })", nil
 }
 

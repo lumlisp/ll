@@ -48,6 +48,31 @@ check_file() {
   fi
 }
 
+check_js() {
+  local label="$1" file="$2"
+  local expected="$EXAMPLES/$(basename "$file" .ll).expected"
+  if [ ! -f "$expected" ]; then
+    printf '  %-40s ... SKIP (no .expected file)\n' "$label"
+    return
+  fi
+  printf '  %-40s ... ' "$label"
+  local node_output
+  node_output="$("$LL" "$file" 2>/dev/null | node 2>&1 || true)"
+  local want
+  want="$(cat "$expected")"
+  if [ "$node_output" = "$want" ]; then
+    green "PASS"
+    PASS=$((PASS + 1))
+  else
+    red "FAIL"
+    echo "--- expected ($expected) ---" >&2
+    echo "$want" >&2
+    echo "--- got ---" >&2
+    echo "$node_output" >&2
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 echo "=== test-a-ll: Lum Lisp Test Runner ==="
 echo ""
 
@@ -69,6 +94,7 @@ check_file "async.ll"       "$ROOT/examples/async.ll"       "$LL" "$ROOT/example
 check_file "oop.ll"         "$ROOT/examples/oop.ll"         "$LL" "$ROOT/examples/oop.ll"
 check_file "js-encode.ll"   "$ROOT/examples/js-encode.ll"   "$LL" "$ROOT/examples/js-encode.ll"
 check_file "js-transpile.ll" "$ROOT/examples/js-transpile.ll" "$LL" "$ROOT/examples/js-transpile.ll"
+check_js    "test_js.ll"    "$ROOT/examples/test_js.ll"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
